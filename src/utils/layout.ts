@@ -4,6 +4,7 @@ import type {
   OrgNode,
   ReportTargetNode,
 } from "../types/orgChart";
+import { getNodeDisplayText } from "./display";
 
 export interface ReportListNode {
   id: string;
@@ -31,13 +32,21 @@ export interface OrgChartLayout {
 }
 
 const CARD_WIDTH = 220;
-const CARD_HEIGHT = 86;
-const VERTICAL_CARD_HEIGHT = 62;
+const CARD_HEIGHT = 70;
+const VERTICAL_CARD_HEIGHT = 44;
+const CARD_HORIZONTAL_PADDING = 28;
+const VERTICAL_CARD_HORIZONTAL_PADDING = 32;
+const PRIMARY_LINE_HEIGHT = 18.4;
+const SECONDARY_LINE_HEIGHT = 15;
+const CARD_VERTICAL_CHROME = 20;
+const VERTICAL_CARD_VERTICAL_CHROME = 16;
+const AVERAGE_PRIMARY_CHARACTER_WIDTH = 8.8;
+const AVERAGE_SECONDARY_CHARACTER_WIDTH = 7;
 const REPORT_LIST_CARD_WIDTH = 280;
 const REPORT_LIST_BASE_HEIGHT = 44;
 const REPORT_LIST_ROW_HEIGHT = 40;
 const HORIZONTAL_GAP = 42;
-const VERTICAL_GAP = 104;
+const VERTICAL_GAP = 78;
 const CANVAS_PADDING = 48;
 
 export function calculateOrgChartLayout(
@@ -63,14 +72,47 @@ export function calculateOrgChartLayout(
 
   const getNodeHeight = (node: VisualOrgNode): number => {
     if (node.type === "vertical") {
-      return VERTICAL_CARD_HEIGHT;
+      const displayText = getNodeDisplayText(node);
+      const contentWidth = CARD_WIDTH - VERTICAL_CARD_HORIZONTAL_PADDING;
+      const primaryLines = estimateWrappedLineCount(
+        displayText.primary,
+        contentWidth,
+        AVERAGE_PRIMARY_CHARACTER_WIDTH,
+      );
+
+      return Math.max(
+        VERTICAL_CARD_HEIGHT,
+        Math.ceil(primaryLines * PRIMARY_LINE_HEIGHT + VERTICAL_CARD_VERTICAL_CHROME),
+      );
     }
 
     if (node.type === "report_list") {
       return REPORT_LIST_BASE_HEIGHT + node.reports.length * REPORT_LIST_ROW_HEIGHT;
     }
 
-    return CARD_HEIGHT;
+    const displayText = getNodeDisplayText(node);
+    const contentWidth = CARD_WIDTH - CARD_HORIZONTAL_PADDING;
+    const primaryLines = estimateWrappedLineCount(
+      displayText.primary,
+      contentWidth,
+      AVERAGE_PRIMARY_CHARACTER_WIDTH,
+    );
+    const secondaryLines = displayText.secondary
+      ? estimateWrappedLineCount(
+          displayText.secondary,
+          contentWidth,
+          AVERAGE_SECONDARY_CHARACTER_WIDTH,
+        )
+      : 0;
+
+    return Math.max(
+      CARD_HEIGHT,
+      Math.ceil(
+        primaryLines * PRIMARY_LINE_HEIGHT +
+          secondaryLines * SECONDARY_LINE_HEIGHT +
+          CARD_VERTICAL_CHROME,
+      ),
+    );
   };
 
   const getChildren = (nodeId: string): VisualOrgNode[] =>
@@ -109,32 +151,34 @@ export function calculateOrgChartLayout(
     return width;
   };
 
-  const placeSubtree = (node: VisualOrgNode, left: number, depth: number): void => {
+  const placeSubtree = (node: VisualOrgNode, left: number, y: number): void => {
     if (positionedNodes.has(node.id)) {
       return;
     }
 
     const subtreeWidth = measureSubtree(node);
     const nodeWidth = getNodeWidth(node);
+    const nodeHeight = getNodeHeight(node);
     const nodeX = left + (subtreeWidth - nodeWidth) / 2;
-    const nodeY = CANVAS_PADDING + depth * (CARD_HEIGHT + VERTICAL_GAP);
 
     positionedNodes.set(node.id, {
       node,
       x: nodeX,
-      y: nodeY,
+      y,
       width: nodeWidth,
-      height: getNodeHeight(node),
+      height: nodeHeight,
     });
 
     let childLeft = left;
+    const childY = y + nodeHeight + VERTICAL_GAP;
+
     for (const child of getChildren(node.id)) {
       if (positionedNodes.has(child.id)) {
         continue;
       }
 
       const childWidth = measureSubtree(child);
-      placeSubtree(child, childLeft, depth + 1);
+      placeSubtree(child, childLeft, childY);
       childLeft += childWidth + HORIZONTAL_GAP;
     }
   };
@@ -142,13 +186,13 @@ export function calculateOrgChartLayout(
   let rootLeft = CANVAS_PADDING;
   for (const root of rootNodes) {
     const rootWidth = measureSubtree(root);
-    placeSubtree(root, rootLeft, 0);
+    placeSubtree(root, rootLeft, CANVAS_PADDING);
     rootLeft += rootWidth + HORIZONTAL_GAP;
   }
 
   for (const node of visualGraph.nodes) {
     if (!positionedNodes.has(node.id)) {
-      placeSubtree(node, rootLeft, 0);
+      placeSubtree(node, rootLeft, CANVAS_PADDING);
       rootLeft += getNodeWidth(node) + HORIZONTAL_GAP;
     }
   }
@@ -314,6 +358,53 @@ function isReportTargetNode(node: OrgNode | undefined): node is ReportTargetNode
     node?.type === "open_role" ||
     node?.type === "approved_role"
   );
+}
+
+function estimateWrappedLineCount(
+  text: string,
+  contentWidth: number,
+  averageCharacterWidth: number,
+): number {
+  const maxCharactersPerLine = Math.max(
+    Math.floor(contentWidth / averageCharacterWidth),
+    1,
+  );
+  const explicitLines = text.split(/\r?\n/);
+
+  return explicitLines.reduce((totalLines, line) => {
+    const words = line.trim().split(/\s+/).filter(Boolean);
+
+    if (words.length === 0) {
+      return totalLines + 1;
+    }
+
+    let lineCount = 1;
+    let currentLineLength = 0;
+
+    for (const word of words) {
+      const wordLength = word.length;
+
+      if (wordLength > maxCharactersPerLine) {
+        lineCount += Math.ceil(wordLength / maxCharactersPerLine) - 1;
+        currentLineLength = wordLength % maxCharactersPerLine;
+        continue;
+      }
+
+      const nextLineLength =
+        currentLineLength === 0
+          ? wordLength
+          : currentLineLength + 1 + wordLength;
+
+      if (nextLineLength > maxCharactersPerLine) {
+        lineCount += 1;
+        currentLineLength = wordLength;
+      } else {
+        currentLineLength = nextLineLength;
+      }
+    }
+
+    return totalLines + lineCount;
+  }, 0);
 }
 
 function hideNodeBranch(

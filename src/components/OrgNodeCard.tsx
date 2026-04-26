@@ -1,4 +1,5 @@
-import type { PointerEvent } from "react";
+import type { ChangeEvent, KeyboardEvent, PointerEvent } from "react";
+import type { OrgNode } from "../types/orgChart";
 import { getNodeDisplayText } from "../utils/display";
 import type { ConnectionHandlePosition } from "./OrgChartCanvas";
 import type { LayoutNode } from "../utils/layout";
@@ -12,21 +13,15 @@ interface OrgNodeCardProps {
     clientX: number,
     clientY: number,
   ) => void;
+  onChangeNode: (node: OrgNode) => void;
   onSelect: (nodeId: string) => void;
 }
-
-const nodeTypeLabels: Record<LayoutNode["node"]["type"], string> = {
-  employee: "Employee",
-  vertical: "Vertical",
-  open_role: "Open role",
-  approved_role: "Approved role",
-  report_list: "Reports",
-};
 
 export function OrgNodeCard({
   layoutNode,
   isSelected,
   onBeginConnectionDrag,
+  onChangeNode,
   onSelect,
 }: OrgNodeCardProps) {
   const selectableNodeId =
@@ -37,23 +32,39 @@ export function OrgNodeCard({
     layoutNode.node.type === "report_list"
       ? undefined
       : getNodeDisplayText(layoutNode.node);
+  const nodeBackgroundColor =
+    layoutNode.node.type === "report_list"
+      ? undefined
+      : layoutNode.node.backgroundColor;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       className={`org-node-card org-node-card--${layoutNode.node.type} ${
         isSelected ? "org-node-card--selected" : ""
       }`}
       style={{
         transform: `translate(${layoutNode.x}px, ${layoutNode.y}px)`,
         width: layoutNode.width,
-        minHeight: layoutNode.height,
+        height: layoutNode.height,
+        ...(nodeBackgroundColor ? { backgroundColor: nodeBackgroundColor } : {}),
       }}
       aria-pressed={isSelected}
       data-node-id={
         layoutNode.node.type === "report_list" ? undefined : layoutNode.node.id
       }
       onClick={() => onSelect(selectableNodeId)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) {
+          return;
+        }
+
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(selectableNodeId);
+        }
+      }}
     >
       {layoutNode.node.type !== "report_list" ? (
         <>
@@ -81,7 +92,6 @@ export function OrgNodeCard({
           />
         </>
       ) : null}
-      <div className="node-type-label">{nodeTypeLabels[layoutNode.node.type]}</div>
       {layoutNode.node.type === "report_list" ? (
         <ul className="report-list-node-items">
           {layoutNode.node.reports.map((report) => {
@@ -99,16 +109,125 @@ export function OrgNodeCard({
         </ul>
       ) : (
         displayText && (
-          <>
-          <div className="node-primary">{displayText.primary}</div>
-          {displayText.secondary ? (
-            <div className="node-secondary">{displayText.secondary}</div>
-          ) : null}
-          </>
+          <NodeEditableFields
+            isSelected={isSelected}
+            node={layoutNode.node}
+            onChangeNode={onChangeNode}
+          />
         )
       )}
-    </button>
+    </div>
   );
+}
+
+interface NodeEditableFieldsProps {
+  isSelected: boolean;
+  node: OrgNode;
+  onChangeNode: (node: OrgNode) => void;
+}
+
+function NodeEditableFields({
+  isSelected,
+  node,
+  onChangeNode,
+}: NodeEditableFieldsProps) {
+  if (node.type === "employee") {
+    return (
+      <>
+        <EditableNodeField
+          className="node-primary"
+          isEditable={isSelected}
+          label="Name"
+          value={node.name}
+          onChange={(name) => onChangeNode({ ...node, name })}
+        />
+        <EditableNodeField
+          className="node-secondary"
+          isEditable={isSelected}
+          label="Job title"
+          value={node.jobTitle}
+          onChange={(jobTitle) => onChangeNode({ ...node, jobTitle })}
+        />
+      </>
+    );
+  }
+
+  if (node.type === "vertical") {
+    return (
+      <EditableNodeField
+        className="node-primary"
+        isEditable={isSelected}
+        label="Vertical name"
+        value={node.verticalName}
+        onChange={(verticalName) => onChangeNode({ ...node, verticalName })}
+      />
+    );
+  }
+
+  return (
+    <>
+      <EditableNodeField
+        className="node-primary"
+        isEditable={isSelected}
+        label="Status label"
+        value={node.statusLabel}
+        onChange={(statusLabel) => onChangeNode({ ...node, statusLabel })}
+      />
+      <EditableNodeField
+        className="node-secondary"
+        isEditable={isSelected}
+        label="Role title"
+        value={node.roleTitle}
+        onChange={(roleTitle) => onChangeNode({ ...node, roleTitle })}
+      />
+    </>
+  );
+}
+
+interface EditableNodeFieldProps {
+  className: string;
+  isEditable: boolean;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function EditableNodeField({
+  className,
+  isEditable,
+  label,
+  value,
+  onChange,
+}: EditableNodeFieldProps) {
+  if (!isEditable) {
+    return <div className={className}>{value}</div>;
+  }
+
+  return (
+    <textarea
+      aria-label={label}
+      className={`${className} node-inline-input`}
+      rows={estimateTextareaRows(value, className)}
+      value={value}
+      onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+        onChange(event.target.value)
+      }
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.key === "Escape") {
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+function estimateTextareaRows(value: string, className: string): number {
+  const maxCharactersPerLine = className.includes("node-primary") ? 22 : 27;
+
+  return value.split(/\r?\n/).reduce((rowCount, line) => {
+    return rowCount + Math.max(Math.ceil(line.length / maxCharactersPerLine), 1);
+  }, 0);
 }
 
 interface ConnectionHandleProps {

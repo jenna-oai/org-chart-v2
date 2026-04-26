@@ -1,19 +1,22 @@
 import type { OrgNode, OrgNodeType } from "../types/orgChart";
 import { getNodeDisplayText } from "../utils/display";
 
+export type AddMenuItemType = OrgNodeType | "text_box";
+
 interface AddNodePanelProps {
   selectedNode: OrgNode | null;
-  onAddNode: (nodeType: OrgNodeType) => void;
+  onAddItem: (itemType: AddMenuItemType) => void;
 }
 
-const addNodeOptions: Array<{ label: string; value: OrgNodeType }> = [
+const addNodeOptions: Array<{ label: string; value: AddMenuItemType }> = [
   { label: "Employee", value: "employee" },
   { label: "Vertical", value: "vertical" },
   { label: "Open role", value: "open_role" },
   { label: "Approved role", value: "approved_role" },
+  { label: "Text box", value: "text_box" },
 ];
 
-export function AddNodePanel({ selectedNode, onAddNode }: AddNodePanelProps) {
+export function AddNodePanel({ selectedNode, onAddItem }: AddNodePanelProps) {
   const selectedDisplayText = selectedNode
     ? getNodeDisplayText(selectedNode).primary
     : null;
@@ -24,14 +27,15 @@ export function AddNodePanel({ selectedNode, onAddNode }: AddNodePanelProps) {
         aria-label="Add New"
         defaultValue=""
         onChange={(event) => {
-          const nodeType = event.target.value as OrgNodeType;
+          const itemType = event.target.value as AddMenuItemType;
 
-          if (!nodeType) {
+          if (!itemType) {
             return;
           }
 
-          onAddNode(nodeType);
+          onAddItem(itemType);
           event.target.value = "";
+          event.target.blur();
         }}
       >
         <option value="" disabled>

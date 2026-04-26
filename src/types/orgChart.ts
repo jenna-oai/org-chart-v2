@@ -9,6 +9,18 @@ export type OrgConnectionType =
   | "owns_vertical"
   | "belongs_to_vertical";
 
+export type UplineConnectionStyle = "solid" | "hashed";
+
+export type OrgNodeBackgroundColor =
+  | "#ffffff"
+  | "#f5f3f3"
+  | "#eef3ff"
+  | "#edf7f1"
+  | "#fff6dd"
+  | "#f7efff"
+  | "#fbeff2"
+  | "#edf6f8";
+
 export interface OrgChart {
   id: string;
   name: string;
@@ -18,9 +30,24 @@ export interface OrgChart {
   metadata?: Record<string, unknown>;
 }
 
+export interface CanvasTextBox {
+  id: string;
+  type: "text_box";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  html: string;
+  backgroundColor?: OrgNodeBackgroundColor;
+  notes?: string;
+  metadata?: Record<string, unknown>;
+}
+
 interface OrgNodeBase {
   id: string;
   type: OrgNodeType;
+  uplineConnectionStyle: UplineConnectionStyle;
+  backgroundColor?: OrgNodeBackgroundColor;
   notes?: string;
   metadata?: Record<string, unknown>;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { OrgChart } from "../types/orgChart";
+import type { CanvasTextBox as CanvasTextBoxModel, OrgChart, OrgNode } from "../types/orgChart";
 import { calculateOrgChartLayout, type LayoutNode } from "../utils/layout";
+import { CanvasTextBox } from "./CanvasTextBox";
 import { OrgConnectionLine } from "./OrgConnectionLine";
 import { OrgNodeCard } from "./OrgNodeCard";
 
@@ -22,21 +23,31 @@ interface OrgChartCanvasProps {
   chart: OrgChart;
   listViewOwnerIds: Set<string>;
   selectedNodeId: string | null;
+  selectedTextBoxId: string | null;
+  textBoxes: CanvasTextBoxModel[];
   onCreateConnection: (
     fromNodeId: string,
     fromHandlePosition: ConnectionHandlePosition,
     toNodeId: string,
     toHandlePosition: ConnectionHandlePosition,
   ) => void;
+  onChangeNode: (node: OrgNode) => void;
+  onChangeTextBox: (textBox: CanvasTextBoxModel) => void;
   onSelectNode: (nodeId: string) => void;
+  onSelectTextBox: (textBoxId: string) => void;
 }
 
 export function OrgChartCanvas({
   chart,
   listViewOwnerIds,
   selectedNodeId,
+  selectedTextBoxId,
+  textBoxes,
   onCreateConnection,
+  onChangeNode,
+  onChangeTextBox,
   onSelectNode,
+  onSelectTextBox,
 }: OrgChartCanvasProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [connectionDrag, setConnectionDrag] = useState<ConnectionDragState | null>(
@@ -45,6 +56,14 @@ export function OrgChartCanvas({
   const layout = useMemo(
     () => calculateOrgChartLayout(chart, listViewOwnerIds),
     [chart, listViewOwnerIds],
+  );
+  const canvasWidth = Math.max(
+    layout.width,
+    ...textBoxes.map((textBox) => textBox.x + textBox.width + 48),
+  );
+  const canvasHeight = Math.max(
+    layout.height,
+    ...textBoxes.map((textBox) => textBox.y + textBox.height + 48),
   );
 
   useEffect(() => {
@@ -117,17 +136,19 @@ export function OrgChartCanvas({
     <section className="canvas-shell" aria-label={`${chart.name} org chart`}>
       <div
         ref={canvasRef}
-        className="org-chart-canvas"
+        className={`org-chart-canvas ${
+          connectionDrag ? "org-chart-canvas--dragging-connection" : ""
+        }`}
         style={{
-          width: layout.width,
-          height: layout.height,
+          width: canvasWidth,
+          height: canvasHeight,
         }}
       >
         <svg
           className="connection-layer"
-          width={layout.width}
-          height={layout.height}
-          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          width={canvasWidth}
+          height={canvasHeight}
+          viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
           aria-hidden="true"
         >
           {layout.connections.map((connection) => (
@@ -155,7 +176,17 @@ export function OrgChartCanvas({
               layoutNode={layoutNode}
               isSelected={getSelectableNodeId(layoutNode.node) === selectedNodeId}
               onBeginConnectionDrag={startConnectionDrag}
+              onChangeNode={onChangeNode}
               onSelect={onSelectNode}
+            />
+          ))}
+          {textBoxes.map((textBox) => (
+            <CanvasTextBox
+              key={textBox.id}
+              textBox={textBox}
+              isSelected={textBox.id === selectedTextBoxId}
+              onChange={onChangeTextBox}
+              onSelect={onSelectTextBox}
             />
           ))}
         </div>

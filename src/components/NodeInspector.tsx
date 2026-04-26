@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
 import type {
   ApprovedRoleNode,
+  CanvasTextBox,
   EmployeeNode,
   OpenRoleNode,
   OrgChart,
+  OrgNodeBackgroundColor,
   OrgNode,
+  OrgNodeType,
   ReportTargetNode,
+  UplineConnectionStyle,
   VerticalNode,
 } from "../types/orgChart";
 import { getNodeDisplayText } from "../utils/display";
@@ -21,7 +25,9 @@ import {
 interface NodeInspectorProps {
   chart: OrgChart;
   node: OrgNode | null;
+  textBox: CanvasTextBox | null;
   onChange: (node: OrgNode) => void;
+  onChangeTextBox: (textBox: CanvasTextBox) => void;
   onChangeManager: (nodeId: string, managerNodeId: string | null) => void;
   onChangeOwnedVertical: (
     employeeNodeId: string,
@@ -40,16 +46,67 @@ const nodeTypeLabels: Record<OrgNode["type"], string> = {
   approved_role: "Approved role",
 };
 
+const nodeTypeOptions: Array<{
+  label: string;
+  value: OrgNodeType;
+}> = [
+  { label: "Employee", value: "employee" },
+  { label: "Vertical", value: "vertical" },
+  { label: "Open role", value: "open_role" },
+  { label: "Approved role", value: "approved_role" },
+];
+
+const backgroundColorOptions: Array<{
+  label: string;
+  value: OrgNodeBackgroundColor | "";
+}> = [
+  { label: "Default", value: "" },
+  { label: "White", value: "#ffffff" },
+  { label: "Warm grey", value: "#f5f3f3" },
+  { label: "Blue", value: "#eef3ff" },
+  { label: "Green", value: "#edf7f1" },
+  { label: "Yellow", value: "#fff6dd" },
+  { label: "Lavender", value: "#f7efff" },
+  { label: "Rose", value: "#fbeff2" },
+  { label: "Cyan", value: "#edf6f8" },
+];
+
 export function NodeInspector({
   chart,
   node,
+  textBox,
   onChange,
+  onChangeTextBox,
   onChangeManager,
   onChangeOwnedVertical,
   onChangeVertical,
   onToggleListView,
   listViewOwnerIds,
 }: NodeInspectorProps) {
+  if (textBox) {
+    return (
+      <section className="node-inspector">
+        <div className="inspector-heading">
+          <div>
+            <p className="inspector-kicker">Text box</p>
+            <h2>Text box inspector</h2>
+          </div>
+          <span className="inspector-type-dot inspector-type-dot--text_box" />
+        </div>
+        <div className="inspector-form">
+          <BackgroundColorField
+            selectedColor={textBox.backgroundColor ?? ""}
+            onChange={(backgroundColor) =>
+              onChangeTextBox(
+                getTextBoxWithBackgroundColor(textBox, backgroundColor),
+              )
+            }
+          />
+        </div>
+      </section>
+    );
+  }
+
   if (!node) {
     return (
       <section className="node-inspector node-inspector--empty">
@@ -69,6 +126,7 @@ export function NodeInspector({
         <span className={`inspector-type-dot inspector-type-dot--${node.type}`} />
       </div>
       <div className="inspector-form">
+        <NodeTypeField node={node} onChange={onChange} />
         {node.type === "employee" ? (
           <EmployeeFields node={node} onChange={onChange} />
         ) : null}
@@ -81,14 +139,24 @@ export function NodeInspector({
         {node.type === "approved_role" ? (
           <ApprovedRoleFields node={node} onChange={onChange} />
         ) : null}
+        <BackgroundColorField
+          selectedColor={node.backgroundColor ?? ""}
+          onChange={(backgroundColor) =>
+            onChange(getNodeWithBackgroundColor(node, backgroundColor))
+          }
+        />
         {isReportTargetNode(node) ? (
           <RelationshipFields
             chart={chart}
             node={node}
+            onChange={onChange}
             onChangeManager={onChangeManager}
             onChangeOwnedVertical={onChangeOwnedVertical}
             onChangeVertical={onChangeVertical}
           />
+        ) : null}
+        {node.type === "vertical" ? (
+          <VerticalRelationshipFields node={node} onChange={onChange} />
         ) : null}
         <RelationshipSummary
           chart={chart}
@@ -98,6 +166,189 @@ export function NodeInspector({
         />
       </div>
     </section>
+  );
+}
+
+interface BackgroundColorFieldProps {
+  selectedColor: OrgNodeBackgroundColor | "";
+  onChange: (backgroundColor: OrgNodeBackgroundColor | "") => void;
+}
+
+function BackgroundColorField({
+  selectedColor,
+  onChange,
+}: BackgroundColorFieldProps) {
+  return (
+    <fieldset className="inspector-color-field">
+      <legend>Background color</legend>
+      <div className="inspector-color-swatches">
+        {backgroundColorOptions.map((option) => (
+          <button
+            key={option.label}
+            type="button"
+            className={`inspector-color-swatch ${
+              selectedColor === option.value
+                ? "inspector-color-swatch--selected"
+                : ""
+            }`}
+            style={
+              option.value
+                ? { backgroundColor: option.value }
+                : undefined
+            }
+            aria-label={option.label}
+            aria-pressed={selectedColor === option.value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.value === "" ? "Default" : null}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+function getNodeWithBackgroundColor(
+  node: OrgNode,
+  backgroundColor: OrgNodeBackgroundColor | "",
+): OrgNode {
+  if (backgroundColor === "") {
+    const { backgroundColor: _backgroundColor, ...nodeWithoutBackground } = node;
+    return nodeWithoutBackground;
+  }
+
+  return {
+    ...node,
+    backgroundColor,
+  };
+}
+
+function getTextBoxWithBackgroundColor(
+  textBox: CanvasTextBox,
+  backgroundColor: OrgNodeBackgroundColor | "",
+): CanvasTextBox {
+  if (backgroundColor === "") {
+    const { backgroundColor: _backgroundColor, ...textBoxWithoutBackground } =
+      textBox;
+    return textBoxWithoutBackground;
+  }
+
+  return {
+    ...textBox,
+    backgroundColor,
+  };
+}
+
+interface NodeTypeFieldProps {
+  node: OrgNode;
+  onChange: (node: OrgNode) => void;
+}
+
+function NodeTypeField({ node, onChange }: NodeTypeFieldProps) {
+  return (
+    <InspectorSelect
+      label="Node type"
+      value={node.type}
+      onChange={(nodeType) =>
+        onChange(convertNodeToType(node, nodeType as OrgNodeType))
+      }
+    >
+      {nodeTypeOptions.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </InspectorSelect>
+  );
+}
+
+function convertNodeToType(node: OrgNode, targetType: OrgNodeType): OrgNode {
+  if (node.type === targetType) {
+    return node;
+  }
+
+  const sharedFields = {
+    id: node.id,
+    uplineConnectionStyle: node.uplineConnectionStyle,
+    backgroundColor: node.backgroundColor,
+    notes: node.notes,
+    metadata: node.metadata,
+  };
+  const roleCopy = getRoleCopy(node);
+  const primaryCopy = getNodeDisplayText(node).primary;
+
+  if (targetType === "employee") {
+    return {
+      ...sharedFields,
+      type: "employee",
+      name: primaryCopy,
+      jobTitle: roleCopy,
+    };
+  }
+
+  if (targetType === "vertical") {
+    return {
+      ...sharedFields,
+      type: "vertical",
+      verticalName: roleCopy || primaryCopy,
+    };
+  }
+
+  if (targetType === "open_role") {
+    return {
+      ...sharedFields,
+      type: "open_role",
+      statusLabel:
+        node.type === "open_role" ? node.statusLabel : "Open Role",
+      roleTitle: roleCopy || primaryCopy,
+    };
+  }
+
+  return {
+    ...sharedFields,
+    type: "approved_role",
+    statusLabel:
+      node.type === "approved_role" ? node.statusLabel : "Approved HC",
+    roleTitle: roleCopy || primaryCopy,
+  };
+}
+
+function getRoleCopy(node: OrgNode): string {
+  if (node.type === "employee") {
+    return node.jobTitle;
+  }
+
+  if (node.type === "open_role" || node.type === "approved_role") {
+    return node.roleTitle;
+  }
+
+  return node.verticalName;
+}
+
+interface ConnectionStyleFieldProps {
+  node: OrgNode;
+  onChange: (node: OrgNode) => void;
+}
+
+function ConnectionStyleField({
+  node,
+  onChange,
+}: ConnectionStyleFieldProps) {
+  return (
+    <InspectorSelect
+      label="Connection type"
+      value={node.uplineConnectionStyle ?? "solid"}
+      onChange={(uplineConnectionStyle) =>
+        onChange({
+          ...node,
+          uplineConnectionStyle:
+            uplineConnectionStyle as UplineConnectionStyle,
+        })
+      }
+    >
+      <option value="solid">Solid</option>
+      <option value="hashed">Hashed</option>
+    </InspectorSelect>
   );
 }
 
@@ -192,14 +443,25 @@ function InspectorInput({ label, value, onChange }: InspectorInputProps) {
   return (
     <label className="inspector-field">
       <span>{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} />
+      <textarea
+        rows={estimateInspectorRows(value)}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </label>
   );
+}
+
+function estimateInspectorRows(value: string): number {
+  return value.split(/\r?\n/).reduce((rowCount, line) => {
+    return rowCount + Math.max(Math.ceil(line.length / 34), 1);
+  }, 0);
 }
 
 interface RelationshipFieldsProps {
   chart: OrgChart;
   node: ReportTargetNode;
+  onChange: (node: OrgNode) => void;
   onChangeManager: (nodeId: string, managerNodeId: string | null) => void;
   onChangeOwnedVertical: (
     employeeNodeId: string,
@@ -212,6 +474,7 @@ interface RelationshipFieldsProps {
 function RelationshipFields({
   chart,
   node,
+  onChange,
   onChangeManager,
   onChangeOwnedVertical,
   onChangeVertical,
@@ -247,7 +510,7 @@ function RelationshipFields({
         ))}
       </InspectorSelect>
       <InspectorSelect
-        label="Vertical"
+        label="Vertical membership"
         value={currentVerticalId}
         onChange={(verticalNodeId) =>
           onChangeVertical(node.id, verticalNodeId === "" ? null : verticalNodeId)
@@ -267,6 +530,24 @@ function RelationshipFields({
           onChangeOwnedVertical={onChangeOwnedVertical}
         />
       ) : null}
+      <ConnectionStyleField node={node} onChange={onChange} />
+    </div>
+  );
+}
+
+interface VerticalRelationshipFieldsProps {
+  node: VerticalNode;
+  onChange: (node: OrgNode) => void;
+}
+
+function VerticalRelationshipFields({
+  node,
+  onChange,
+}: VerticalRelationshipFieldsProps) {
+  return (
+    <div className="inspector-section">
+      <h3>Relationships</h3>
+      <ConnectionStyleField node={node} onChange={onChange} />
     </div>
   );
 }
