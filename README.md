@@ -13,6 +13,10 @@ Open the local Vite URL shown in the terminal.
 
 The npm scripts point Vite at `esbuild-wasm` so the local app can run even in environments where native esbuild binaries are blocked.
 
+## GitHub Pages
+
+This repo includes a GitHub Actions workflow that builds and deploys the Vite app to GitHub Pages on pushes to `main`. The workflow sets `GITHUB_PAGES=true`, which makes Vite build assets under `/org-chart-v2/` for the Pages URL while keeping local development served from `/`.
+
 ## Data Model
 
 The model is graph-based:
@@ -36,7 +40,7 @@ Nodes do not store their children. This keeps the foundation flexible for later 
 - Connections cannot be deleted directly yet.
 - Employee reports and vertical occupants can be shown as generated condensed visual list nodes.
 - No drag-and-drop or manual position overrides.
-- No persistence, backend, auth, sharing, import, or export.
+- No backend, auth, sharing, or cloud sync.
 - Layout is basic and does not optimize dense or unusual graphs.
 - Connectors are simple SVG elbow paths.
 - Relationship edits are local only and reset on reload.
