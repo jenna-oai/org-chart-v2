@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type {
   ApprovedRoleNode,
   CanvasTextBox,
@@ -30,11 +30,13 @@ interface NodeInspectorProps {
   onChangeTextBox: (textBox: CanvasTextBox) => void;
   onChangeManager: (nodeId: string, managerNodeId: string | null) => void;
   onChangeOwnedVertical: (
-    employeeNodeId: string,
+    ownerNodeId: string,
     verticalNodeId: string,
     ownsVertical: boolean,
   ) => void;
+  autoFocusNodeId: string | null;
   onChangeVertical: (nodeId: string, verticalNodeId: string | null) => void;
+  onAutoFocusHandled: () => void;
   onToggleListView: (ownerNodeId: string, viewAsList: boolean) => void;
   listViewOwnerIds: Set<string>;
 }
@@ -79,7 +81,9 @@ export function NodeInspector({
   onChangeTextBox,
   onChangeManager,
   onChangeOwnedVertical,
+  autoFocusNodeId,
   onChangeVertical,
+  onAutoFocusHandled,
   onToggleListView,
   listViewOwnerIds,
 }: NodeInspectorProps) {
@@ -128,23 +132,37 @@ export function NodeInspector({
       <div className="inspector-form">
         <NodeTypeField node={node} onChange={onChange} />
         {node.type === "employee" ? (
-          <EmployeeFields node={node} onChange={onChange} />
+          <EmployeeFields
+            autoFocus={autoFocusNodeId === node.id}
+            node={node}
+            onAutoFocusHandled={onAutoFocusHandled}
+            onChange={onChange}
+          />
         ) : null}
         {node.type === "vertical" ? (
-          <VerticalFields node={node} onChange={onChange} />
+          <VerticalFields
+            autoFocus={autoFocusNodeId === node.id}
+            node={node}
+            onAutoFocusHandled={onAutoFocusHandled}
+            onChange={onChange}
+          />
         ) : null}
         {node.type === "open_role" ? (
-          <OpenRoleFields node={node} onChange={onChange} />
+          <OpenRoleFields
+            autoFocus={autoFocusNodeId === node.id}
+            node={node}
+            onAutoFocusHandled={onAutoFocusHandled}
+            onChange={onChange}
+          />
         ) : null}
         {node.type === "approved_role" ? (
-          <ApprovedRoleFields node={node} onChange={onChange} />
+          <ApprovedRoleFields
+            autoFocus={autoFocusNodeId === node.id}
+            node={node}
+            onAutoFocusHandled={onAutoFocusHandled}
+            onChange={onChange}
+          />
         ) : null}
-        <BackgroundColorField
-          selectedColor={node.backgroundColor ?? ""}
-          onChange={(backgroundColor) =>
-            onChange(getNodeWithBackgroundColor(node, backgroundColor))
-          }
-        />
         {isReportTargetNode(node) ? (
           <RelationshipFields
             chart={chart}
@@ -353,16 +371,25 @@ function ConnectionStyleField({
 }
 
 interface EmployeeFieldsProps {
+  autoFocus: boolean;
   node: EmployeeNode;
+  onAutoFocusHandled: () => void;
   onChange: (node: OrgNode) => void;
 }
 
-function EmployeeFields({ node, onChange }: EmployeeFieldsProps) {
+function EmployeeFields({
+  autoFocus,
+  node,
+  onAutoFocusHandled,
+  onChange,
+}: EmployeeFieldsProps) {
   return (
     <>
       <InspectorInput
+        autoFocus={autoFocus}
         label="Name"
         value={node.name}
+        onAutoFocusHandled={onAutoFocusHandled}
         onChange={(name) => onChange({ ...node, name })}
       />
       <InspectorInput
@@ -375,31 +402,49 @@ function EmployeeFields({ node, onChange }: EmployeeFieldsProps) {
 }
 
 interface VerticalFieldsProps {
+  autoFocus: boolean;
   node: VerticalNode;
+  onAutoFocusHandled: () => void;
   onChange: (node: OrgNode) => void;
 }
 
-function VerticalFields({ node, onChange }: VerticalFieldsProps) {
+function VerticalFields({
+  autoFocus,
+  node,
+  onAutoFocusHandled,
+  onChange,
+}: VerticalFieldsProps) {
   return (
     <InspectorInput
+      autoFocus={autoFocus}
       label="Vertical name"
       value={node.verticalName}
+      onAutoFocusHandled={onAutoFocusHandled}
       onChange={(verticalName) => onChange({ ...node, verticalName })}
     />
   );
 }
 
 interface OpenRoleFieldsProps {
+  autoFocus: boolean;
   node: OpenRoleNode;
+  onAutoFocusHandled: () => void;
   onChange: (node: OrgNode) => void;
 }
 
-function OpenRoleFields({ node, onChange }: OpenRoleFieldsProps) {
+function OpenRoleFields({
+  autoFocus,
+  node,
+  onAutoFocusHandled,
+  onChange,
+}: OpenRoleFieldsProps) {
   return (
     <>
       <InspectorInput
+        autoFocus={autoFocus}
         label="Status label"
         value={node.statusLabel}
+        onAutoFocusHandled={onAutoFocusHandled}
         onChange={(statusLabel) => onChange({ ...node, statusLabel })}
       />
       <InspectorInput
@@ -412,16 +457,25 @@ function OpenRoleFields({ node, onChange }: OpenRoleFieldsProps) {
 }
 
 interface ApprovedRoleFieldsProps {
+  autoFocus: boolean;
   node: ApprovedRoleNode;
+  onAutoFocusHandled: () => void;
   onChange: (node: OrgNode) => void;
 }
 
-function ApprovedRoleFields({ node, onChange }: ApprovedRoleFieldsProps) {
+function ApprovedRoleFields({
+  autoFocus,
+  node,
+  onAutoFocusHandled,
+  onChange,
+}: ApprovedRoleFieldsProps) {
   return (
     <>
       <InspectorInput
+        autoFocus={autoFocus}
         label="Status label"
         value={node.statusLabel}
+        onAutoFocusHandled={onAutoFocusHandled}
         onChange={(statusLabel) => onChange({ ...node, statusLabel })}
       />
       <InspectorInput
@@ -434,19 +488,62 @@ function ApprovedRoleFields({ node, onChange }: ApprovedRoleFieldsProps) {
 }
 
 interface InspectorInputProps {
+  autoFocus?: boolean;
   label: string;
+  onAutoFocusHandled?: () => void;
   value: string;
   onChange: (value: string) => void;
 }
 
-function InspectorInput({ label, value, onChange }: InspectorInputProps) {
+function InspectorInput({
+  autoFocus = false,
+  label,
+  onAutoFocusHandled,
+  value,
+  onChange,
+}: InspectorInputProps) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const shouldPreserveFocusSelectionRef = useRef(false);
+
+  useEffect(() => {
+    if (!autoFocus) {
+      return;
+    }
+
+    const textarea = textareaRef.current;
+
+    if (!textarea) {
+      return;
+    }
+
+    textarea.focus();
+    textarea.select();
+    onAutoFocusHandled?.();
+  }, [autoFocus, onAutoFocusHandled]);
+
   return (
     <label className="inspector-field">
       <span>{label}</span>
       <textarea
+        ref={textareaRef}
         rows={estimateInspectorRows(value)}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={() => {
+          shouldPreserveFocusSelectionRef.current = false;
+        }}
+        onFocus={(event) => {
+          event.currentTarget.select();
+          shouldPreserveFocusSelectionRef.current = true;
+        }}
+        onMouseUp={(event) => {
+          if (!shouldPreserveFocusSelectionRef.current) {
+            return;
+          }
+
+          event.preventDefault();
+          shouldPreserveFocusSelectionRef.current = false;
+        }}
       />
     </label>
   );
@@ -464,7 +561,7 @@ interface RelationshipFieldsProps {
   onChange: (node: OrgNode) => void;
   onChangeManager: (nodeId: string, managerNodeId: string | null) => void;
   onChangeOwnedVertical: (
-    employeeNodeId: string,
+    ownerNodeId: string,
     verticalNodeId: string,
     ownsVertical: boolean,
   ) => void;
@@ -505,7 +602,7 @@ function RelationshipFields({
         <option value="">No manager</option>
         {managerOptions.map((manager) => (
           <option key={manager.id} value={manager.id}>
-            {manager.name}
+            {getManagerOptionLabel(manager)}
           </option>
         ))}
       </InspectorSelect>
@@ -523,14 +620,18 @@ function RelationshipFields({
           </option>
         ))}
       </InspectorSelect>
-      {node.type === "employee" ? (
-        <OwnedVerticalFields
-          chart={chart}
-          employee={node}
-          onChangeOwnedVertical={onChangeOwnedVertical}
-        />
-      ) : null}
+      <OwnedVerticalFields
+        chart={chart}
+        ownerNode={node}
+        onChangeOwnedVertical={onChangeOwnedVertical}
+      />
       <ConnectionStyleField node={node} onChange={onChange} />
+      <BackgroundColorField
+        selectedColor={node.backgroundColor ?? ""}
+        onChange={(backgroundColor) =>
+          onChange(getNodeWithBackgroundColor(node, backgroundColor))
+        }
+      />
     </div>
   );
 }
@@ -548,15 +649,21 @@ function VerticalRelationshipFields({
     <div className="inspector-section">
       <h3>Relationships</h3>
       <ConnectionStyleField node={node} onChange={onChange} />
+      <BackgroundColorField
+        selectedColor={node.backgroundColor ?? ""}
+        onChange={(backgroundColor) =>
+          onChange(getNodeWithBackgroundColor(node, backgroundColor))
+        }
+      />
     </div>
   );
 }
 
 interface OwnedVerticalFieldsProps {
   chart: OrgChart;
-  employee: EmployeeNode;
+  ownerNode: ReportTargetNode;
   onChangeOwnedVertical: (
-    employeeNodeId: string,
+    ownerNodeId: string,
     verticalNodeId: string,
     ownsVertical: boolean,
   ) => void;
@@ -564,14 +671,14 @@ interface OwnedVerticalFieldsProps {
 
 function OwnedVerticalFields({
   chart,
-  employee,
+  ownerNode,
   onChangeOwnedVertical,
 }: OwnedVerticalFieldsProps) {
   const verticalOptions = chart.nodes.filter(
     (chartNode): chartNode is VerticalNode => chartNode.type === "vertical",
   );
   const ownedVerticalIds = new Set(
-    getOwnedVerticals(employee.id, chart).map((vertical) => vertical.id),
+    getOwnedVerticals(ownerNode.id, chart).map((vertical) => vertical.id),
   );
 
   return (
@@ -579,21 +686,22 @@ function OwnedVerticalFields({
       <legend>Owned verticals</legend>
       {verticalOptions.map((vertical) => {
         const owner = getVerticalOwner(vertical.id, chart);
-        const isOwnedByEmployee = ownedVerticalIds.has(vertical.id);
+        const isOwnedByNode = ownedVerticalIds.has(vertical.id);
+        const ownerDisplayText = owner ? getNodeDisplayText(owner) : null;
 
         return (
           <label key={vertical.id} className="inspector-checkbox">
             <input
-              checked={isOwnedByEmployee}
+              checked={isOwnedByNode}
               type="checkbox"
               onChange={(event) =>
-                onChangeOwnedVertical(employee.id, vertical.id, event.target.checked)
+                onChangeOwnedVertical(ownerNode.id, vertical.id, event.target.checked)
               }
             />
             <span>
               {vertical.verticalName}
-              {owner && owner.id !== employee.id ? (
-                <small>Owned by {owner.name}</small>
+              {owner && owner.id !== ownerNode.id && ownerDisplayText ? (
+                <small>Owned by {ownerDisplayText.primary}</small>
               ) : null}
             </span>
           </label>
@@ -673,10 +781,21 @@ function RelationshipSummary({
   }
 
   return (
-    <section className="inspector-section">
-      <h3>Reports</h3>
-      <p className="inspector-empty-text">Roles cannot have reports yet.</p>
-    </section>
+    <>
+      <ListViewRelationshipSection
+        emptyText="No direct reports"
+        items={getDirectReports(node.id, chart)}
+        ownerNodeId={node.id}
+        title="Reports"
+        viewAsList={listViewOwnerIds.has(node.id)}
+        onToggleListView={onToggleListView}
+      />
+      <RelationshipList
+        emptyText="No owned verticals"
+        items={getOwnedVerticals(node.id, chart)}
+        title="Owned verticals"
+      />
+    </>
   );
 }
 
@@ -759,16 +878,27 @@ function RelationshipListContents({
 function getEligibleManagers(
   node: ReportTargetNode,
   chart: OrgChart,
-): EmployeeNode[] {
-  const descendantIds =
-    node.type === "employee" ? getReportingDescendantIds(node.id, chart) : new Set();
+): ReportTargetNode[] {
+  const descendantIds = getReportingDescendantIds(node.id, chart);
 
   return chart.nodes.filter(
-    (chartNode): chartNode is EmployeeNode =>
-      chartNode.type === "employee" &&
+    (chartNode): chartNode is ReportTargetNode =>
+      isReportTargetNode(chartNode) &&
       chartNode.id !== node.id &&
       !descendantIds.has(chartNode.id),
   );
+}
+
+function getManagerOptionLabel(manager: ReportTargetNode): string {
+  if (manager.type === "open_role") {
+    return `[Open] ${manager.roleTitle}`;
+  }
+
+  if (manager.type === "approved_role") {
+    return `[Approved] ${manager.roleTitle}`;
+  }
+
+  return manager.name;
 }
 
 function getReportingDescendantIds(nodeId: string, chart: OrgChart): Set<string> {

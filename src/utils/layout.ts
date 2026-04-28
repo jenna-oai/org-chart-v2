@@ -36,15 +36,17 @@ const CARD_HEIGHT = 70;
 const VERTICAL_CARD_HEIGHT = 44;
 const CARD_HORIZONTAL_PADDING = 28;
 const VERTICAL_CARD_HORIZONTAL_PADDING = 32;
-const PRIMARY_LINE_HEIGHT = 18.4;
-const SECONDARY_LINE_HEIGHT = 15;
-const CARD_VERTICAL_CHROME = 20;
+const PRIMARY_LINE_HEIGHT = 18;
+const SECONDARY_LINE_HEIGHT = 14;
+const CARD_VERTICAL_CHROME = 28;
 const VERTICAL_CARD_VERTICAL_CHROME = 16;
 const AVERAGE_PRIMARY_CHARACTER_WIDTH = 8.8;
 const AVERAGE_SECONDARY_CHARACTER_WIDTH = 7;
 const REPORT_LIST_CARD_WIDTH = 280;
-const REPORT_LIST_BASE_HEIGHT = 44;
-const REPORT_LIST_ROW_HEIGHT = 40;
+const REPORT_LIST_CARD_VERTICAL_PADDING = 24;
+const REPORT_LIST_ROW_HORIZONTAL_CHROME = 40;
+const REPORT_LIST_ROW_VERTICAL_CHROME = 16;
+const REPORT_LIST_ROW_GAP = 8;
 const HORIZONTAL_GAP = 42;
 const VERTICAL_GAP = 78;
 const CANVAS_PADDING = 48;
@@ -87,7 +89,35 @@ export function calculateOrgChartLayout(
     }
 
     if (node.type === "report_list") {
-      return REPORT_LIST_BASE_HEIGHT + node.reports.length * REPORT_LIST_ROW_HEIGHT;
+      const rowContentWidth =
+        REPORT_LIST_CARD_WIDTH - REPORT_LIST_ROW_HORIZONTAL_CHROME;
+      const rowsHeight = node.reports.reduce((height, report) => {
+        const displayText = getNodeDisplayText(report);
+        const primaryLines = estimateWrappedLineCount(
+          displayText.primary,
+          rowContentWidth,
+          AVERAGE_PRIMARY_CHARACTER_WIDTH,
+        );
+        const secondaryLines = displayText.secondary
+          ? estimateWrappedLineCount(
+              displayText.secondary,
+              rowContentWidth,
+              AVERAGE_SECONDARY_CHARACTER_WIDTH,
+            )
+          : 0;
+
+        return (
+          height +
+          Math.ceil(
+            primaryLines * PRIMARY_LINE_HEIGHT +
+              secondaryLines * SECONDARY_LINE_HEIGHT +
+              REPORT_LIST_ROW_VERTICAL_CHROME,
+          )
+        );
+      }, 0);
+      const rowGaps = Math.max(node.reports.length - 1, 0) * REPORT_LIST_ROW_GAP;
+
+      return Math.ceil(REPORT_LIST_CARD_VERTICAL_PADDING + rowsHeight + rowGaps);
     }
 
     const displayText = getNodeDisplayText(node);
@@ -244,6 +274,7 @@ export function getVisualGraph(
 export function getVisualConnections(connections: OrgConnection[]): OrgConnection[] {
   const verticalOwnerByVerticalId = new Map<string, string>();
   const verticalByContainedNodeId = new Map<string, string>();
+  const managerByReportNodeId = new Map<string, string>();
 
   for (const connection of connections) {
     if (connection.connectionType === "owns_vertical") {
@@ -253,10 +284,26 @@ export function getVisualConnections(connections: OrgConnection[]): OrgConnectio
     if (connection.connectionType === "belongs_to_vertical") {
       verticalByContainedNodeId.set(connection.toNodeId, connection.fromNodeId);
     }
+
+    if (connection.connectionType === "reports_to") {
+      managerByReportNodeId.set(connection.toNodeId, connection.fromNodeId);
+    }
   }
 
   return connections
     .filter((connection) => {
+      if (
+        connection.connectionType === "belongs_to_vertical" &&
+        hasManagerInSameVertical(
+          connection.toNodeId,
+          connection.fromNodeId,
+          managerByReportNodeId,
+          verticalByContainedNodeId,
+        )
+      ) {
+        return false;
+      }
+
       if (connection.connectionType !== "reports_to") {
         return true;
       }
@@ -275,6 +322,21 @@ export function getVisualConnections(connections: OrgConnection[]): OrgConnectio
         getConnectionLayoutPriority(secondConnection)
       );
     });
+}
+
+function hasManagerInSameVertical(
+  nodeId: string,
+  verticalId: string,
+  managerByReportNodeId: Map<string, string>,
+  verticalByContainedNodeId: Map<string, string>,
+): boolean {
+  const managerNodeId = managerByReportNodeId.get(nodeId);
+
+  if (!managerNodeId) {
+    return false;
+  }
+
+  return verticalByContainedNodeId.get(managerNodeId) === verticalId;
 }
 
 function getReportListNodes(

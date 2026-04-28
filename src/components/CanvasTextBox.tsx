@@ -4,6 +4,7 @@ import type { CanvasTextBox as CanvasTextBoxModel } from "../types/orgChart";
 interface CanvasTextBoxProps {
   textBox: CanvasTextBoxModel;
   isSelected: boolean;
+  zoom: number;
   onChange: (textBox: CanvasTextBoxModel) => void;
   onSelect: (textBoxId: string) => void;
 }
@@ -11,6 +12,7 @@ interface CanvasTextBoxProps {
 export function CanvasTextBox({
   textBox,
   isSelected,
+  zoom,
   onChange,
   onSelect,
 }: CanvasTextBoxProps) {
@@ -95,8 +97,14 @@ export function CanvasTextBox({
 
       onChange({
         ...textBox,
-        x: Math.max(0, dragState.startX + event.clientX - dragState.startClientX),
-        y: Math.max(0, dragState.startY + event.clientY - dragState.startClientY),
+        x: Math.max(
+          0,
+          dragState.startX + (event.clientX - dragState.startClientX) / zoom,
+        ),
+        y: Math.max(
+          0,
+          dragState.startY + (event.clientY - dragState.startClientY) / zoom,
+        ),
       });
     };
 

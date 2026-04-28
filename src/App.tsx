@@ -40,6 +40,35 @@ interface PersistedEditorSnapshot {
   textBoxes: CanvasTextBox[];
 }
 
+interface JsonExportPayload {
+  fileName: string;
+  json: string;
+}
+
+interface BrowserFileWritable {
+  write: (data: Blob) => Promise<void>;
+  close: () => Promise<void>;
+}
+
+interface BrowserFileHandle {
+  createWritable: () => Promise<BrowserFileWritable>;
+}
+
+interface BrowserSaveFilePickerOptions {
+  suggestedName: string;
+  types: Array<{
+    description: string;
+    accept: Record<string, string[]>;
+  }>;
+}
+
+type WindowWithSaveFilePicker = Window &
+  typeof globalThis & {
+    showSaveFilePicker?: (
+      options: BrowserSaveFilePickerOptions,
+    ) => Promise<BrowserFileHandle>;
+  };
+
 const EDITOR_STORAGE_KEY = "org-chart-v2:editor-state";
 
 export function App() {
@@ -48,9 +77,14 @@ export function App() {
     loadEditorSnapshot(),
   );
   const [undoStack, setUndoStack] = useState<EditorSnapshot[]>([]);
+  const [inspectorAutoFocusNodeId, setInspectorAutoFocusNodeId] = useState<
+    string | null
+  >(null);
   const [isChartTitleSelected, setIsChartTitleSelected] = useState(false);
   const [isNewChartDialogOpen, setIsNewChartDialogOpen] = useState(false);
   const [isPngExportDialogOpen, setIsPngExportDialogOpen] = useState(false);
+  const [jsonExportPayload, setJsonExportPayload] =
+    useState<JsonExportPayload | null>(null);
   const { chart, listViewOwnerIds, selectedNodeId, selectedTextBoxId, textBoxes } =
     editorState;
   const validation = validateOrgChart(chart);
@@ -182,7 +216,7 @@ export function App() {
   };
 
   const updateOwnedVertical = (
-    employeeNodeId: string,
+    ownerNodeId: string,
     verticalNodeId: string,
     ownsVertical: boolean,
   ) => {
@@ -203,8 +237,8 @@ export function App() {
             ? [
                 ...connectionsWithoutVerticalOwner,
                 {
-                  id: `owns-${employeeNodeId}-${verticalNodeId}`,
-                  fromNodeId: employeeNodeId,
+                  id: `owns-${ownerNodeId}-${verticalNodeId}`,
+                  fromNodeId: ownerNodeId,
                   toNodeId: verticalNodeId,
                   connectionType: "owns_vertical",
                 },
@@ -225,14 +259,16 @@ export function App() {
   };
 
   const addNode = (nodeType: OrgNodeType) => {
-    commitEditorState((currentState) => {
-      const currentSelectedNode =
-        currentState.chart.nodes.find(
-          (node) => node.id === currentState.selectedNodeId,
-        ) ?? null;
-      const newNode = createNewNode(nodeType, currentState.chart);
-      const placementConnection = createPlacementConnection(currentSelectedNode, newNode);
+    const currentSelectedNode =
+      chart.nodes.find((node) => node.id === selectedNodeId) ?? null;
+    const newNode = createNewNode(nodeType, chart);
+    const placementConnections = createPlacementConnections(
+      currentSelectedNode,
+      newNode,
+      chart,
+    );
 
+    commitEditorState((currentState) => {
       return {
         ...currentState,
         selectedNodeId: newNode.id,
@@ -240,12 +276,14 @@ export function App() {
         chart: {
           ...currentState.chart,
           nodes: [...currentState.chart.nodes, newNode],
-          connections: placementConnection
-            ? [...currentState.chart.connections, placementConnection]
-            : currentState.chart.connections,
+          connections:
+            placementConnections.length > 0
+              ? [...currentState.chart.connections, ...placementConnections]
+              : currentState.chart.connections,
         },
       };
     });
+    setInspectorAutoFocusNodeId(newNode.id);
   };
 
   const addTextBox = () => {
@@ -397,12 +435,19 @@ export function App() {
   };
 
   const exportChartJson = () => {
-    downloadBlob(
-      new Blob([JSON.stringify(serializeEditorSnapshot(editorState), null, 2)], {
-        type: "application/json",
-      }),
-      `${slugifyFileName(chart.name)}.json`,
-    );
+    const json = JSON.stringify(serializeEditorSnapshot(editorState), null, 2);
+    const jsonBlob = createJsonBlob(json);
+    const fileName = `${slugifyFileName(chart.name)}.json`;
+
+    setJsonExportPayload({ fileName, json });
+    void saveBlob(jsonBlob, fileName, {
+      description: "Org chart JSON",
+      mimeType: "application/json",
+      extension: ".json",
+    }).catch((error: unknown) => {
+      console.error(error);
+      window.alert("The chart could not be exported as JSON.");
+    });
   };
 
   const importChartJson = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -521,12 +566,14 @@ export function App() {
             <AddNodePanel selectedNode={selectedNode} onAddItem={addItem} />
             <NodeInspector
               chart={chart}
+              autoFocusNodeId={inspectorAutoFocusNodeId}
               node={selectedNode}
               textBox={selectedTextBox}
               onChange={updateNode}
               onChangeTextBox={updateTextBox}
               onChangeManager={updateManager}
               onChangeOwnedVertical={updateOwnedVertical}
+              onAutoFocusHandled={() => setInspectorAutoFocusNodeId(null)}
               onChangeVertical={updateVertical}
               listViewOwnerIds={listViewOwnerIds}
               onToggleListView={toggleListView}
@@ -554,6 +601,23 @@ export function App() {
           onExport={exportChartPng}
         />
       ) : null}
+      {jsonExportPayload ? (
+        <JsonExportDialog
+          fileName={jsonExportPayload.fileName}
+          json={jsonExportPayload.json}
+          onClose={() => setJsonExportPayload(null)}
+          onDownload={() => {
+            void saveBlob(createJsonBlob(jsonExportPayload.json), jsonExportPayload.fileName, {
+              description: "Org chart JSON",
+              mimeType: "application/json",
+              extension: ".json",
+            }).catch((error: unknown) => {
+              console.error(error);
+              window.alert("The chart could not be exported as JSON.");
+            });
+          }}
+        />
+      ) : null}
     </main>
   );
 }
@@ -575,6 +639,88 @@ interface PngExportDialogProps {
 interface NewChartDialogProps {
   onCancel: () => void;
   onConfirm: () => void;
+}
+
+interface JsonExportDialogProps {
+  fileName: string;
+  json: string;
+  onClose: () => void;
+  onDownload: () => void;
+}
+
+function JsonExportDialog({
+  fileName,
+  json,
+  onClose,
+  onDownload,
+}: JsonExportDialogProps) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [copyStatus, setCopyStatus] = useState("");
+
+  const copyJson = async () => {
+    try {
+      await navigator.clipboard.writeText(json);
+      setCopyStatus("Copied JSON to clipboard.");
+      return;
+    } catch {
+      const textarea = textareaRef.current;
+
+      if (!textarea) {
+        setCopyStatus("Select the JSON text and copy it manually.");
+        return;
+      }
+
+      textarea.focus();
+      textarea.select();
+      const copied = document.execCommand("copy");
+      setCopyStatus(
+        copied
+          ? "Copied JSON to clipboard."
+          : "Select the JSON text and copy it manually.",
+      );
+    }
+  };
+
+  return (
+    <div className="export-dialog-backdrop" role="presentation">
+      <section
+        className="export-dialog json-export-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="json-export-heading"
+      >
+        <h2 id="json-export-heading">Export JSON</h2>
+        <p>
+          Your chart JSON is ready as <strong>{fileName}</strong>. If the browser
+          does not download it automatically, use Download JSON again or copy the
+          text below.
+        </p>
+        <textarea
+          ref={textareaRef}
+          className="json-export-textarea"
+          readOnly
+          value={json}
+          aria-label="Exported chart JSON"
+        />
+        {copyStatus ? (
+          <p className="json-export-status" aria-live="polite">
+            {copyStatus}
+          </p>
+        ) : null}
+        <div className="export-dialog-actions export-dialog-actions--three">
+          <button type="button" onClick={onDownload}>
+            Download JSON
+          </button>
+          <button type="button" onClick={() => void copyJson()}>
+            Copy JSON
+          </button>
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function NewChartDialog({ onCancel, onConfirm }: NewChartDialogProps) {
@@ -985,16 +1131,88 @@ function isCanvasTextBox(value: unknown): value is CanvasTextBox {
   );
 }
 
+function createJsonBlob(json: string): Blob {
+  return new Blob([json], {
+    type: "application/json",
+  });
+}
+
+async function saveBlob(
+  blob: Blob,
+  fileName: string,
+  options: {
+    description: string;
+    extension: string;
+    mimeType: string;
+  },
+): Promise<void> {
+  const saveFilePicker = (window as WindowWithSaveFilePicker).showSaveFilePicker;
+
+  if (saveFilePicker) {
+    try {
+      const fileHandle = await saveFilePicker({
+        suggestedName: fileName,
+        types: [
+          {
+            description: options.description,
+            accept: {
+              [options.mimeType]: [options.extension],
+            },
+          },
+        ],
+      });
+      const writableFile = await fileHandle.createWritable();
+      await writableFile.write(blob);
+      await writableFile.close();
+      return;
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+    }
+  }
+
+  downloadBlob(blob, fileName);
+
+  if (options.mimeType === "application/json") {
+    openBlobInNewTab(blob);
+  }
+}
+
 function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
 
   link.href = url;
   link.download = fileName;
+  link.rel = "noopener";
+  link.style.display = "none";
   document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  link.dispatchEvent(
+    new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    }),
+  );
+
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function openBlobInNewTab(blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const openedWindow = window.open(url, "_blank", "noopener");
+
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, openedWindow ? 60_000 : 1000);
 }
 
 function slugifyFileName(fileName: string): string {
@@ -1180,6 +1398,7 @@ function createExportPreviewClone(preview: ExportPreview): HTMLElement {
 
 function getExportContentBounds(element: HTMLElement): ExportBounds {
   const canvasRect = element.getBoundingClientRect();
+  const canvasZoom = getRenderedCanvasZoom(element);
   const cellElements = Array.from(
     element.querySelectorAll<HTMLElement>(".org-node-card, .canvas-text-box"),
   );
@@ -1198,10 +1417,16 @@ function getExportContentBounds(element: HTMLElement): ExportBounds {
       const cellRect = cellElement.getBoundingClientRect();
 
       return {
-        left: Math.min(bounds.left, cellRect.left - canvasRect.left),
-        top: Math.min(bounds.top, cellRect.top - canvasRect.top),
-        right: Math.max(bounds.right, cellRect.right - canvasRect.left),
-        bottom: Math.max(bounds.bottom, cellRect.bottom - canvasRect.top),
+        left: Math.min(bounds.left, (cellRect.left - canvasRect.left) / canvasZoom),
+        top: Math.min(bounds.top, (cellRect.top - canvasRect.top) / canvasZoom),
+        right: Math.max(
+          bounds.right,
+          (cellRect.right - canvasRect.left) / canvasZoom,
+        ),
+        bottom: Math.max(
+          bounds.bottom,
+          (cellRect.bottom - canvasRect.top) / canvasZoom,
+        ),
       };
     },
     {
@@ -1223,6 +1448,13 @@ function getExportContentBounds(element: HTMLElement): ExportBounds {
     width: Math.max(right - left, 1),
     height: Math.max(bottom - top, 1),
   };
+}
+
+function getRenderedCanvasZoom(element: HTMLElement): number {
+  const zoomElement = element.closest<HTMLElement>("[data-canvas-zoom]");
+  const zoom = Number.parseFloat(zoomElement?.dataset.canvasZoom ?? "1");
+
+  return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
 }
 
 function getDocumentStyleText(): string {
@@ -1271,14 +1503,14 @@ function getConnectionsValidForNodes(
     }
 
     if (connection.connectionType === "owns_vertical") {
-      return fromNode.type === "employee" && toNode.type === "vertical";
+      return isReportTargetType(fromNode) && toNode.type === "vertical";
     }
 
     if (connection.connectionType === "belongs_to_vertical") {
       return fromNode.type === "vertical" && isReportTargetType(toNode);
     }
 
-    return fromNode.type === "employee" && isReportTargetType(toNode);
+    return isReportTargetType(fromNode) && isReportTargetType(toNode);
   });
 }
 
@@ -1387,16 +1619,11 @@ function inferConnectionType(
   parentNode: OrgNode,
   childNode: OrgNode,
 ): OrgConnectionType | null {
-  if (parentNode.type === "employee" && childNode.type === "vertical") {
+  if (isReportTargetType(parentNode) && childNode.type === "vertical") {
     return "owns_vertical";
   }
 
-  if (
-    parentNode.type === "employee" &&
-    (childNode.type === "employee" ||
-      childNode.type === "open_role" ||
-      childNode.type === "approved_role")
-  ) {
+  if (isReportTargetType(parentNode) && isReportTargetType(childNode)) {
     return "reports_to";
   }
 
@@ -1454,36 +1681,74 @@ function createNewNode(nodeType: OrgNodeType, chart: OrgChart): OrgNode {
   };
 }
 
-function createPlacementConnection(
+function createPlacementConnections(
   selectedNode: OrgNode | null,
   newNode: OrgNode,
-): OrgConnection | null {
+  chart: OrgChart,
+): OrgConnection[] {
   if (!selectedNode) {
-    return null;
+    return [];
   }
 
   if (selectedNode.type === "employee") {
     const connectionType =
       newNode.type === "vertical" ? "owns_vertical" : "reports_to";
 
-    return {
-      id: `${connectionType}-${selectedNode.id}-${newNode.id}`,
-      fromNodeId: selectedNode.id,
-      toNodeId: newNode.id,
-      connectionType,
-    };
+    return [
+      {
+        id: `${connectionType}-${selectedNode.id}-${newNode.id}`,
+        fromNodeId: selectedNode.id,
+        toNodeId: newNode.id,
+        connectionType,
+      },
+    ];
+  }
+
+  if (selectedNode.type === "open_role" || selectedNode.type === "approved_role") {
+    const connectionType =
+      newNode.type === "vertical" ? "owns_vertical" : "reports_to";
+
+    return [
+      {
+        id: `${connectionType}-${selectedNode.id}-${newNode.id}`,
+        fromNodeId: selectedNode.id,
+        toNodeId: newNode.id,
+        connectionType,
+      },
+    ];
   }
 
   if (selectedNode.type === "vertical" && newNode.type !== "vertical") {
-    return {
-      id: `belongs-to-${selectedNode.id}-${newNode.id}`,
-      fromNodeId: selectedNode.id,
-      toNodeId: newNode.id,
-      connectionType: "belongs_to_vertical",
-    };
+    const placementConnections: OrgConnection[] = [
+      {
+        id: `belongs-to-${selectedNode.id}-${newNode.id}`,
+        fromNodeId: selectedNode.id,
+        toNodeId: newNode.id,
+        connectionType: "belongs_to_vertical",
+      },
+    ];
+    const verticalOwnerConnection = chart.connections.find(
+      (connection) =>
+        connection.connectionType === "owns_vertical" &&
+        connection.toNodeId === selectedNode.id,
+    );
+    const verticalOwnerNode = verticalOwnerConnection
+      ? chart.nodes.find((node) => node.id === verticalOwnerConnection.fromNodeId)
+      : null;
+
+    if (newNode.type === "employee" && verticalOwnerNode?.type === "employee") {
+      placementConnections.push({
+        id: `reports-to-${verticalOwnerNode.id}-${newNode.id}`,
+        fromNodeId: verticalOwnerNode.id,
+        toNodeId: newNode.id,
+        connectionType: "reports_to",
+      });
+    }
+
+    return placementConnections;
   }
 
-  return null;
+  return [];
 }
 
 function getNextNodeNumber(nodeType: OrgNodeType, chart: OrgChart): number {

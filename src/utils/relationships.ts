@@ -26,20 +26,20 @@ export function getIncomingConnections(
 }
 
 export function getDirectReports(
-  employeeNodeId: string,
+  managerNodeId: string,
   chart: OrgChart,
 ): ReportTargetNode[] {
-  return getOutgoingConnections(employeeNodeId, chart)
+  return getOutgoingConnections(managerNodeId, chart)
     .filter((connection) => connection.connectionType === "reports_to")
     .map((connection) => getNodeById(connection.toNodeId, chart))
     .filter(isReportTargetNode);
 }
 
 export function getManager(
-  employeeNodeId: string,
+  nodeId: string,
   chart: OrgChart,
-): EmployeeNode | null {
-  const managerConnection = getIncomingConnections(employeeNodeId, chart).find(
+): ReportTargetNode | null {
+  const managerConnection = getIncomingConnections(nodeId, chart).find(
     (connection) => connection.connectionType === "reports_to",
   );
 
@@ -48,14 +48,14 @@ export function getManager(
   }
 
   const manager = getNodeById(managerConnection.fromNodeId, chart);
-  return isEmployeeNode(manager) ? manager : null;
+  return isReportTargetNode(manager) ? manager : null;
 }
 
 export function getOwnedVerticals(
-  employeeNodeId: string,
+  ownerNodeId: string,
   chart: OrgChart,
 ): VerticalNode[] {
-  return getOutgoingConnections(employeeNodeId, chart)
+  return getOutgoingConnections(ownerNodeId, chart)
     .filter((connection) => connection.connectionType === "owns_vertical")
     .map((connection) => getNodeById(connection.toNodeId, chart))
     .filter(isVerticalNode);
@@ -64,7 +64,7 @@ export function getOwnedVerticals(
 export function getVerticalOwner(
   verticalNodeId: string,
   chart: OrgChart,
-): EmployeeNode | null {
+): ReportTargetNode | null {
   const ownerConnection = getIncomingConnections(verticalNodeId, chart).find(
     (connection) => connection.connectionType === "owns_vertical",
   );
@@ -74,7 +74,7 @@ export function getVerticalOwner(
   }
 
   const owner = getNodeById(ownerConnection.fromNodeId, chart);
-  return isEmployeeNode(owner) ? owner : null;
+  return isReportTargetNode(owner) ? owner : null;
 }
 
 export function getNodesBelongingToVertical(

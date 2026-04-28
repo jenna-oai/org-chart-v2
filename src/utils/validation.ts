@@ -77,10 +77,11 @@ function validateConnectionShape(
   issues: OrgChartValidationIssue[],
 ): void {
   if (connection.connectionType === "owns_vertical") {
-    if (fromNode.type !== "employee" || toNode.type !== "vertical") {
+    if (!isReportTargetNode(fromNode) || toNode.type !== "vertical") {
       issues.push({
         code: "invalid_owns_vertical_connection",
-        message: "owns_vertical connections must go from employee to vertical.",
+        message:
+          "owns_vertical connections must go from employee, open_role, or approved_role to vertical.",
         connectionId: connection.id,
       });
     }
@@ -102,11 +103,11 @@ function validateConnectionShape(
   }
 
   if (connection.connectionType === "reports_to") {
-    if (fromNode.type !== "employee" || !isReportTargetNode(toNode)) {
+    if (!isReportTargetNode(fromNode) || !isReportTargetNode(toNode)) {
       issues.push({
         code: "invalid_reports_to_connection",
         message:
-          "reports_to connections must go from employee to employee, open_role, or approved_role. Use owns_vertical for employee to vertical ownership.",
+          "reports_to connections must go from employee, open_role, or approved_role to employee, open_role, or approved_role. Use owns_vertical for vertical ownership.",
         connectionId: connection.id,
       });
     }

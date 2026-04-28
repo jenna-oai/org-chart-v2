@@ -1,4 +1,9 @@
-import type { ChangeEvent, KeyboardEvent, PointerEvent } from "react";
+import type {
+  CSSProperties,
+  ChangeEvent,
+  KeyboardEvent,
+  PointerEvent,
+} from "react";
 import type { OrgNode } from "../types/orgChart";
 import { getNodeDisplayText } from "../utils/display";
 import type { ConnectionHandlePosition } from "./OrgChartCanvas";
@@ -98,7 +103,10 @@ export function OrgNodeCard({
             const reportDisplayText = getNodeDisplayText(report);
 
             return (
-              <li key={report.id}>
+              <li
+                key={report.id}
+                className={`report-list-node-item report-list-node-item--${report.type}`}
+              >
                 <span>{reportDisplayText.primary}</span>
                 {reportDisplayText.secondary ? (
                   <small>{reportDisplayText.secondary}</small>
@@ -199,8 +207,14 @@ function EditableNodeField({
   value,
   onChange,
 }: EditableNodeFieldProps) {
+  const fieldStyle = getNodeFieldFitStyle(value, className);
+
   if (!isEditable) {
-    return <div className={className}>{value}</div>;
+    return (
+      <div className={className} style={fieldStyle}>
+        {value}
+      </div>
+    );
   }
 
   return (
@@ -208,6 +222,7 @@ function EditableNodeField({
       aria-label={label}
       className={`${className} node-inline-input`}
       rows={estimateTextareaRows(value, className)}
+      style={fieldStyle}
       value={value}
       onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
         onChange(event.target.value)
@@ -220,6 +235,44 @@ function EditableNodeField({
       }}
     />
   );
+}
+
+function getNodeFieldFitStyle(value: string, className: string): CSSProperties {
+  const lineCount = estimateTextareaRows(value, className);
+
+  if (className.includes("node-primary")) {
+    if (lineCount >= 3) {
+      return {
+        fontSize: 13,
+        lineHeight: 1.08,
+      };
+    }
+
+    if (lineCount === 2) {
+      return {
+        fontSize: 14,
+        lineHeight: 1.1,
+      };
+    }
+
+    return {};
+  }
+
+  if (lineCount >= 3) {
+    return {
+      fontSize: 10.5,
+      lineHeight: 1.08,
+    };
+  }
+
+  if (lineCount === 2) {
+    return {
+      fontSize: 12,
+      lineHeight: 1.1,
+    };
+  }
+
+  return {};
 }
 
 function estimateTextareaRows(value: string, className: string): number {
