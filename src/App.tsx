@@ -12,7 +12,6 @@ import type { ConnectionHandlePosition } from "./components/OrgChartCanvas";
 import { OrgChartCanvas } from "./components/OrgChartCanvas";
 import { NodeInspector } from "./components/NodeInspector";
 import { ToolbarPlaceholder } from "./components/ToolbarPlaceholder";
-import { sampleChart } from "./data/sampleChart";
 import type {
   CanvasTextBox,
   OrgChart,
@@ -954,16 +953,6 @@ function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
   };
 }
 
-function createDefaultEditorSnapshot(): EditorSnapshot {
-  return {
-    chart: sampleChart,
-    selectedNodeId: null,
-    selectedTextBoxId: null,
-    listViewOwnerIds: new Set(),
-    textBoxes: [],
-  };
-}
-
 function createBlankEditorSnapshot(): EditorSnapshot {
   return {
     chart: {
@@ -981,14 +970,14 @@ function createBlankEditorSnapshot(): EditorSnapshot {
 
 function loadEditorSnapshot(): EditorSnapshot {
   if (typeof window === "undefined") {
-    return createDefaultEditorSnapshot();
+    return createBlankEditorSnapshot();
   }
 
   try {
     const storedSnapshot = window.localStorage.getItem(EDITOR_STORAGE_KEY);
 
     if (!storedSnapshot) {
-      return createDefaultEditorSnapshot();
+      return createBlankEditorSnapshot();
     }
 
     const parsedSnapshot = JSON.parse(storedSnapshot) as Partial<
@@ -1000,7 +989,7 @@ function loadEditorSnapshot(): EditorSnapshot {
       !Array.isArray(parsedSnapshot.chart.nodes) ||
       !Array.isArray(parsedSnapshot.chart.connections)
     ) {
-      return createDefaultEditorSnapshot();
+      return createBlankEditorSnapshot();
     }
 
     return {
@@ -1026,7 +1015,7 @@ function loadEditorSnapshot(): EditorSnapshot {
         : [],
     };
   } catch {
-    return createDefaultEditorSnapshot();
+    return createBlankEditorSnapshot();
   }
 }
 
