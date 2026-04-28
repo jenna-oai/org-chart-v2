@@ -474,7 +474,7 @@ export function App() {
     }
   };
 
-  const exportChartPng = async (dimensions: ExportDimensions) => {
+  const exportChartPng = (dimensions: ExportDimensions) => {
     const canvasElement = document.querySelector<HTMLElement>(".org-chart-canvas");
 
     if (!canvasElement) {
@@ -482,10 +482,12 @@ export function App() {
     }
 
     try {
-      const pngBlob = await renderElementToPngBlob(canvasElement, dimensions);
-      downloadBlob(pngBlob, `${slugifyFileName(chart.name)}.png`);
+      const pngDataUrl = renderElementToPngDataUrl(canvasElement, dimensions);
+
+      downloadDataUrl(pngDataUrl, `${slugifyFileName(chart.name)}.png`);
       setIsPngExportDialogOpen(false);
-    } catch {
+    } catch (error) {
+      console.error(error);
       window.alert("The chart could not be exported as a PNG.");
     }
   };
@@ -1207,6 +1209,21 @@ function downloadBlob(blob: Blob, fileName: string): void {
   }, 1000);
 }
 
+function downloadDataUrl(dataUrl: string, fileName: string): void {
+  const link = document.createElement("a");
+
+  link.href = dataUrl;
+  link.download = fileName;
+  link.rel = "noopener";
+  link.style.display = "none";
+  document.body.append(link);
+  link.click();
+
+  window.setTimeout(() => {
+    link.remove();
+  }, 0);
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
@@ -1252,82 +1269,506 @@ interface ExportPreview {
   aspectRatio: number;
 }
 
-async function renderElementToPngBlob(
+function renderElementToPngDataUrl(
   element: HTMLElement,
   dimensions: ExportDimensions,
-): Promise<Blob> {
-  const sourceWidth = Math.ceil(element.offsetWidth);
-  const sourceHeight = Math.ceil(element.offsetHeight);
+): string {
   const exportBounds = getExportContentBounds(element);
   const outputWidth = Math.max(Math.round(dimensions.width), 1);
   const outputHeight = Math.max(Math.round(dimensions.height), 1);
   const scaleX = outputWidth / exportBounds.width;
   const scaleY = outputHeight / exportBounds.height;
-  const clone = element.cloneNode(true) as HTMLElement;
-  const wrapper = document.createElement("div");
-  const style = document.createElement("style");
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
 
-  clone.classList.add("org-chart-canvas--exporting");
-  clone.style.position = "absolute";
-  clone.style.top = `${-exportBounds.top * scaleY}px`;
-  clone.style.left = `${-exportBounds.left * scaleX}px`;
-  clone.style.width = `${sourceWidth}px`;
-  clone.style.height = `${sourceHeight}px`;
-  clone.style.transform = `scale(${scaleX}, ${scaleY})`;
-  clone.style.transformOrigin = "top left";
-  clone.querySelectorAll("[contenteditable]").forEach((editableElement) => {
-    editableElement.removeAttribute("contenteditable");
-  });
+  if (!context) {
+    throw new Error("Canvas rendering is unavailable.");
+  }
 
-  style.textContent = getDocumentStyleText();
-  wrapper.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
-  wrapper.style.position = "relative";
-  wrapper.style.width = `${outputWidth}px`;
-  wrapper.style.height = `${outputHeight}px`;
-  wrapper.style.overflow = "hidden";
-  wrapper.style.background = "transparent";
-  wrapper.append(style, clone);
+  canvas.width = outputWidth;
+  canvas.height = outputHeight;
+  context.clearRect(0, 0, outputWidth, outputHeight);
+  context.save();
+  context.setTransform(
+    scaleX,
+    0,
+    0,
+    scaleY,
+    -exportBounds.left * scaleX,
+    -exportBounds.top * scaleY,
+  );
+  drawExportConnections(context, element);
+  drawExportCells(context, element);
+  context.restore();
 
-  const serializedMarkup = new XMLSerializer().serializeToString(wrapper);
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${outputWidth}" height="${outputHeight}" viewBox="0 0 ${outputWidth} ${outputHeight}">
-      <foreignObject width="100%" height="100%">${serializedMarkup}</foreignObject>
-    </svg>
-  `;
-  const imageUrl = URL.createObjectURL(
-    new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
+  return canvas.toDataURL("image/png");
+}
+
+interface CanvasRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+function drawExportConnections(
+  context: CanvasRenderingContext2D,
+  element: HTMLElement,
+): void {
+  const connectionElements = element.querySelectorAll<SVGPathElement>(
+    "path.connection-line",
   );
 
-  try {
-    const image = new Image();
-    image.decoding = "async";
-    image.src = imageUrl;
-    await image.decode();
+  connectionElements.forEach((connectionElement) => {
+    const pathDefinition = connectionElement.getAttribute("d");
 
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-
-    if (!context) {
-      throw new Error("Canvas rendering is unavailable.");
+    if (!pathDefinition) {
+      return;
     }
 
-    canvas.width = outputWidth;
-    canvas.height = outputHeight;
-    context.clearRect(0, 0, outputWidth, outputHeight);
-    context.drawImage(image, 0, 0);
+    const computedStyle = getComputedStyle(connectionElement);
 
-    return await new Promise((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (blob) {
-          resolve(blob);
-        } else {
-          reject(new Error("PNG export failed."));
-        }
-      }, "image/png");
-    });
-  } finally {
-    URL.revokeObjectURL(imageUrl);
+    context.save();
+    context.strokeStyle = computedStyle.stroke || "#000000";
+    context.lineWidth = parseCssPixels(computedStyle.strokeWidth, 2);
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.setLineDash(parseCssDashArray(computedStyle.strokeDasharray));
+
+    try {
+      context.stroke(new Path2D(pathDefinition));
+    } catch {
+      drawSimpleOrthogonalPath(context, pathDefinition);
+    }
+
+    context.restore();
+  });
+}
+
+function drawExportCells(
+  context: CanvasRenderingContext2D,
+  element: HTMLElement,
+): void {
+  const canvasRect = element.getBoundingClientRect();
+  const canvasZoom = getRenderedCanvasZoom(element);
+  const cellElements = element.querySelectorAll<HTMLElement>(
+    ".org-node-card, .canvas-text-box",
+  );
+
+  cellElements.forEach((cellElement) => {
+    if (cellElement.classList.contains("canvas-text-box")) {
+      drawExportTextBox(context, cellElement, canvasRect, canvasZoom);
+      return;
+    }
+
+    drawExportNodeCard(context, cellElement, canvasRect, canvasZoom);
+  });
+}
+
+function drawExportNodeCard(
+  context: CanvasRenderingContext2D,
+  element: HTMLElement,
+  canvasRect: DOMRect,
+  canvasZoom: number,
+): void {
+  const bounds = getElementCanvasRect(element, canvasRect, canvasZoom);
+  const computedStyle = getComputedStyle(element);
+  const radius = element.classList.contains("org-node-card--vertical")
+    ? bounds.height / 2
+    : Math.min(
+        parseCssPixels(computedStyle.borderTopLeftRadius, 15),
+        bounds.width / 2,
+        bounds.height / 2,
+      );
+
+  drawRoundedRect(context, bounds, radius, {
+    fillStyle: computedStyle.backgroundColor || "#ffffff",
+    strokeStyle: computedStyle.borderTopColor || "#000000",
+    lineWidth: parseCssPixels(computedStyle.borderTopWidth, 2),
+  });
+
+  if (element.classList.contains("org-node-card--report_list")) {
+    drawExportReportList(context, element, canvasRect, canvasZoom);
+    return;
   }
+
+  element
+    .querySelectorAll<HTMLElement>(".node-primary, .node-secondary")
+    .forEach((textElement) =>
+      drawCenteredTextElement(context, textElement, canvasRect, canvasZoom),
+    );
+}
+
+function drawExportReportList(
+  context: CanvasRenderingContext2D,
+  element: HTMLElement,
+  canvasRect: DOMRect,
+  canvasZoom: number,
+): void {
+  element.querySelectorAll<HTMLElement>(".report-list-node-item").forEach((item) => {
+    const bounds = getElementCanvasRect(item, canvasRect, canvasZoom);
+    const computedStyle = getComputedStyle(item);
+
+    drawRoundedRect(context, bounds, parseCssPixels(computedStyle.borderRadius, 8), {
+      fillStyle: computedStyle.backgroundColor || "#ffffff",
+      strokeStyle: computedStyle.borderTopColor || "#000000",
+      lineWidth: parseCssPixels(computedStyle.borderTopWidth, 1),
+    });
+
+    item
+      .querySelectorAll<HTMLElement>("span, small")
+      .forEach((textElement) =>
+        drawCenteredTextElement(context, textElement, canvasRect, canvasZoom),
+      );
+  });
+}
+
+function drawExportTextBox(
+  context: CanvasRenderingContext2D,
+  element: HTMLElement,
+  canvasRect: DOMRect,
+  canvasZoom: number,
+): void {
+  const bounds = getElementCanvasRect(element, canvasRect, canvasZoom);
+  const computedStyle = getComputedStyle(element);
+  const editorElement = element.querySelector<HTMLElement>(".canvas-text-box-editor");
+
+  drawRoundedRect(context, bounds, parseCssPixels(computedStyle.borderRadius, 6), {
+    fillStyle: computedStyle.backgroundColor || "#ffffff",
+    strokeStyle: element.classList.contains("canvas-text-box--selected")
+      ? "#9aa8b8"
+      : computedStyle.borderTopColor || "#9aa8b8",
+    lineWidth: parseCssPixels(computedStyle.borderTopWidth, 1),
+  });
+
+  if (editorElement) {
+    drawTextBoxText(context, editorElement, bounds);
+  }
+}
+
+function drawCenteredTextElement(
+  context: CanvasRenderingContext2D,
+  element: HTMLElement,
+  canvasRect: DOMRect,
+  canvasZoom: number,
+): void {
+  const text = getElementText(element).trim();
+
+  if (!text) {
+    return;
+  }
+
+  const bounds = getElementCanvasRect(element, canvasRect, canvasZoom);
+  const computedStyle = getComputedStyle(element);
+  const fontSize = parseCssPixels(computedStyle.fontSize, 14);
+  const lineHeight = parseLineHeight(computedStyle.lineHeight, fontSize);
+  const lines = wrapCanvasText(context, text, bounds.width, computedStyle);
+  const totalTextHeight = lines.length * lineHeight;
+  const startY = bounds.top + Math.max((bounds.height - totalTextHeight) / 2, 0);
+
+  context.save();
+  applyCanvasTextStyle(context, computedStyle);
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  lines.forEach((line, index) => {
+    context.fillText(
+      line,
+      bounds.left + bounds.width / 2,
+      startY + index * lineHeight + lineHeight / 2,
+      bounds.width,
+    );
+  });
+  context.restore();
+}
+
+function drawTextBoxText(
+  context: CanvasRenderingContext2D,
+  editorElement: HTMLElement,
+  textBoxBounds: CanvasRect,
+): void {
+  const text = getElementText(editorElement).trim();
+
+  if (!text) {
+    return;
+  }
+
+  const computedStyle = getComputedStyle(editorElement);
+  const fontSize = parseCssPixels(computedStyle.fontSize, 14);
+  const lineHeight = parseLineHeight(computedStyle.lineHeight, fontSize);
+  const paddingTop = parseCssPixels(computedStyle.paddingTop, 10);
+  const paddingRight = parseCssPixels(computedStyle.paddingRight, 12);
+  const paddingBottom = parseCssPixels(computedStyle.paddingBottom, 10);
+  const paddingLeft = parseCssPixels(computedStyle.paddingLeft, 12);
+  const textLeft = textBoxBounds.left + paddingLeft;
+  const textTop = textBoxBounds.top + paddingTop;
+  const textWidth = Math.max(textBoxBounds.width - paddingLeft - paddingRight, 1);
+  const maxTextBottom = textBoxBounds.top + textBoxBounds.height - paddingBottom;
+  const lines = wrapCanvasText(context, text, textWidth, computedStyle);
+
+  context.save();
+  applyCanvasTextStyle(context, computedStyle);
+  context.textAlign = "left";
+  context.textBaseline = "middle";
+  lines.forEach((line, index) => {
+    const lineY = textTop + index * lineHeight + lineHeight / 2;
+
+    if (lineY <= maxTextBottom) {
+      context.fillText(line, textLeft, lineY, textWidth);
+    }
+  });
+  context.restore();
+}
+
+function applyCanvasTextStyle(
+  context: CanvasRenderingContext2D,
+  computedStyle: CSSStyleDeclaration,
+): void {
+  const fontSize = parseCssPixels(computedStyle.fontSize, 14);
+  const fontStyle = computedStyle.fontStyle || "normal";
+  const fontWeight = computedStyle.fontWeight || "400";
+  const fontFamily = computedStyle.fontFamily || "sans-serif";
+
+  context.fillStyle = computedStyle.color || "#17202a";
+  context.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
+}
+
+function wrapCanvasText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  computedStyle: CSSStyleDeclaration,
+): string[] {
+  context.save();
+  applyCanvasTextStyle(context, computedStyle);
+  const lines = text.split(/\r?\n/).flatMap((line) =>
+    wrapCanvasLine(context, line.trim(), maxWidth),
+  );
+  context.restore();
+
+  return lines.length > 0 ? lines : [""];
+}
+
+function wrapCanvasLine(
+  context: CanvasRenderingContext2D,
+  line: string,
+  maxWidth: number,
+): string[] {
+  if (!line) {
+    return [""];
+  }
+
+  const words = line.split(/\s+/);
+  const wrappedLines: string[] = [];
+  let currentLine = "";
+
+  words.forEach((word) => {
+    const nextLine = currentLine ? `${currentLine} ${word}` : word;
+
+    if (context.measureText(nextLine).width <= maxWidth) {
+      currentLine = nextLine;
+      return;
+    }
+
+    if (currentLine) {
+      wrappedLines.push(currentLine);
+    }
+
+    if (context.measureText(word).width <= maxWidth) {
+      currentLine = word;
+      return;
+    }
+
+    const brokenWordLines = breakLongWord(context, word, maxWidth);
+    wrappedLines.push(...brokenWordLines.slice(0, -1));
+    currentLine = brokenWordLines[brokenWordLines.length - 1] ?? "";
+  });
+
+  if (currentLine) {
+    wrappedLines.push(currentLine);
+  }
+
+  return wrappedLines;
+}
+
+function breakLongWord(
+  context: CanvasRenderingContext2D,
+  word: string,
+  maxWidth: number,
+): string[] {
+  const lines: string[] = [];
+  let currentLine = "";
+
+  Array.from(word).forEach((character) => {
+    const nextLine = `${currentLine}${character}`;
+
+    if (!currentLine || context.measureText(nextLine).width <= maxWidth) {
+      currentLine = nextLine;
+      return;
+    }
+
+    lines.push(currentLine);
+    currentLine = character;
+  });
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
+function drawRoundedRect(
+  context: CanvasRenderingContext2D,
+  bounds: CanvasRect,
+  radius: number,
+  options: {
+    fillStyle: string;
+    strokeStyle: string;
+    lineWidth: number;
+  },
+): void {
+  const safeRadius = Math.max(
+    Math.min(radius, bounds.width / 2, bounds.height / 2),
+    0,
+  );
+
+  context.save();
+  context.beginPath();
+  context.moveTo(bounds.left + safeRadius, bounds.top);
+  context.lineTo(bounds.left + bounds.width - safeRadius, bounds.top);
+  context.quadraticCurveTo(
+    bounds.left + bounds.width,
+    bounds.top,
+    bounds.left + bounds.width,
+    bounds.top + safeRadius,
+  );
+  context.lineTo(
+    bounds.left + bounds.width,
+    bounds.top + bounds.height - safeRadius,
+  );
+  context.quadraticCurveTo(
+    bounds.left + bounds.width,
+    bounds.top + bounds.height,
+    bounds.left + bounds.width - safeRadius,
+    bounds.top + bounds.height,
+  );
+  context.lineTo(bounds.left + safeRadius, bounds.top + bounds.height);
+  context.quadraticCurveTo(
+    bounds.left,
+    bounds.top + bounds.height,
+    bounds.left,
+    bounds.top + bounds.height - safeRadius,
+  );
+  context.lineTo(bounds.left, bounds.top + safeRadius);
+  context.quadraticCurveTo(
+    bounds.left,
+    bounds.top,
+    bounds.left + safeRadius,
+    bounds.top,
+  );
+  context.closePath();
+  context.fillStyle = options.fillStyle;
+  context.fill();
+
+  if (options.lineWidth > 0) {
+    context.strokeStyle = options.strokeStyle;
+    context.lineWidth = options.lineWidth;
+    context.stroke();
+  }
+
+  context.restore();
+}
+
+function drawSimpleOrthogonalPath(
+  context: CanvasRenderingContext2D,
+  pathDefinition: string,
+): void {
+  const commands = pathDefinition.match(/[MLHV][^MLHV]*/g) ?? [];
+  let currentX = 0;
+  let currentY = 0;
+
+  context.beginPath();
+  commands.forEach((command) => {
+    const type = command[0];
+    const values = command
+      .slice(1)
+      .trim()
+      .split(/\s+/)
+      .map((value) => Number.parseFloat(value))
+      .filter(Number.isFinite);
+
+    if (type === "M" && values.length >= 2) {
+      currentX = values[0];
+      currentY = values[1];
+      context.moveTo(values[0], values[1]);
+      return;
+    }
+
+    if (type === "L" && values.length >= 2) {
+      currentX = values[0];
+      currentY = values[1];
+      context.lineTo(values[0], values[1]);
+      return;
+    }
+
+    if (type === "H" && values.length >= 1) {
+      currentX = values[0];
+      context.lineTo(currentX, currentY);
+      return;
+    }
+
+    if (type === "V" && values.length >= 1) {
+      currentY = values[0];
+      context.lineTo(currentX, currentY);
+    }
+  });
+  context.stroke();
+}
+
+function getElementCanvasRect(
+  element: HTMLElement,
+  canvasRect: DOMRect,
+  canvasZoom: number,
+): CanvasRect {
+  const elementRect = element.getBoundingClientRect();
+
+  return {
+    left: (elementRect.left - canvasRect.left) / canvasZoom,
+    top: (elementRect.top - canvasRect.top) / canvasZoom,
+    width: elementRect.width / canvasZoom,
+    height: elementRect.height / canvasZoom,
+  };
+}
+
+function getElementText(element: HTMLElement): string {
+  if (element instanceof HTMLTextAreaElement) {
+    return element.value;
+  }
+
+  return element.innerText || element.textContent || "";
+}
+
+function parseCssDashArray(value: string): number[] {
+  if (!value || value === "none") {
+    return [];
+  }
+
+  return value
+    .split(/[,\s]+/)
+    .map((part) => Number.parseFloat(part))
+    .filter((part) => Number.isFinite(part) && part > 0);
+}
+
+function parseCssPixels(value: string, fallback: number): number {
+  const parsedValue = Number.parseFloat(value);
+
+  return Number.isFinite(parsedValue) ? parsedValue : fallback;
+}
+
+function parseLineHeight(value: string, fontSize: number): number {
+  const parsedLineHeight = Number.parseFloat(value);
+
+  return Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 1.2;
 }
 
 function getCurrentExportPreview(): ExportPreview {
@@ -1460,20 +1901,6 @@ function getRenderedCanvasZoom(element: HTMLElement): number {
   const zoom = Number.parseFloat(zoomElement?.dataset.canvasZoom ?? "1");
 
   return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
-}
-
-function getDocumentStyleText(): string {
-  return Array.from(document.styleSheets)
-    .map((styleSheet) => {
-      try {
-        return Array.from(styleSheet.cssRules)
-          .map((rule) => rule.cssText)
-          .join("\n");
-      } catch {
-        return "";
-      }
-    })
-    .join("\n");
 }
 
 function replaceIncomingConnection(
