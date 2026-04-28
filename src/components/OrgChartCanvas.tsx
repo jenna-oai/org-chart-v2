@@ -56,6 +56,7 @@ interface OrgChartCanvasProps {
   ) => void;
   onChangeNode: (node: OrgNode) => void;
   onChangeTextBox: (textBox: CanvasTextBoxModel) => void;
+  onAddFirstEmployee: () => void;
   onSelectNode: (nodeId: string) => void;
   onSelectTextBox: (textBoxId: string) => void;
 }
@@ -69,6 +70,7 @@ export function OrgChartCanvas({
   onCreateConnection,
   onChangeNode,
   onChangeTextBox,
+  onAddFirstEmployee,
   onSelectNode,
   onSelectTextBox,
 }: OrgChartCanvasProps) {
@@ -96,6 +98,7 @@ export function OrgChartCanvas({
     layout.height,
     ...textBoxes.map((textBox) => textBox.y + textBox.height + 48),
   );
+  const shouldShowStarterHelp = chart.nodes.length <= 1;
 
   const changeZoom = (delta: number) => {
     setZoom((currentZoom) => clampZoom(currentZoom + delta));
@@ -277,6 +280,23 @@ export function OrgChartCanvas({
               ) : null}
             </svg>
             <div className="node-layer">
+              {shouldShowStarterHelp ? (
+                <div className="canvas-starter-help" role="status">
+                  <h2>
+                    {chart.nodes.length === 0
+                      ? "Start your org chart"
+                      : "Keep building"}
+                  </h2>
+                  <p>
+                    {chart.nodes.length === 0
+                      ? "Add the first employee to begin building reporting lines."
+                      : "Add another employee to start defining the reporting line."}
+                  </p>
+                  <button type="button" onClick={onAddFirstEmployee}>
+                    Add employee
+                  </button>
+                </div>
+              ) : null}
               {layout.nodes.map((layoutNode) => (
                 <OrgNodeCard
                   key={layoutNode.node.id}

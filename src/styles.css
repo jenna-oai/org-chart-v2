@@ -272,6 +272,58 @@ select {
   pointer-events: none;
 }
 
+.canvas-starter-help {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  width: min(300px, calc(100% - 48px));
+  padding: 16px;
+  text-align: center;
+  color: #17202a;
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid #bfccd9;
+  border-radius: 8px;
+  box-shadow: 0 14px 34px rgb(31 41 51 / 14%);
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(6px);
+}
+
+.canvas-starter-help h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.canvas-starter-help p {
+  margin: 0 0 14px;
+  color: #5b6878;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.canvas-starter-help button {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  color: #ffffff;
+  background: #17202a;
+  border: 1px solid #17202a;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.canvas-starter-help button:hover {
+  background: #2a3644;
+  border-color: #2a3644;
+}
+
+.canvas-starter-help button:focus-visible {
+  outline: 3px solid rgb(53 116 183 / 24%);
+  outline-offset: 2px;
+}
+
 .org-node-card {
   position: absolute;
   display: flex;

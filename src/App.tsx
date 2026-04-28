@@ -525,6 +525,7 @@ export function App() {
             onCreateConnection={createDraggedConnection}
             onChangeNode={updateNode}
             onChangeTextBox={updateTextBox}
+            onAddFirstEmployee={() => addItem("employee")}
             onSelectNode={(nodeId) => {
               setIsChartTitleSelected(false);
               setEditorState((currentState) => ({
