@@ -1311,6 +1311,12 @@ interface CanvasRect {
   height: number;
 }
 
+interface ExportTextLine {
+  text: string;
+  computedStyle: CSSStyleDeclaration;
+  lineHeight: number;
+}
+
 function drawExportConnections(
   context: CanvasRenderingContext2D,
   element: HTMLElement,
@@ -1392,11 +1398,7 @@ function drawExportNodeCard(
     return;
   }
 
-  element
-    .querySelectorAll<HTMLElement>(".node-primary, .node-secondary")
-    .forEach((textElement) =>
-      drawCenteredTextElement(context, textElement, canvasRect, canvasZoom),
-    );
+  drawExportTextStack(context, element, bounds, ".node-primary, .node-secondary");
 }
 
 function drawExportReportList(
@@ -1415,11 +1417,7 @@ function drawExportReportList(
       lineWidth: parseCssPixels(computedStyle.borderTopWidth, 1),
     });
 
-    item
-      .querySelectorAll<HTMLElement>("span, small")
-      .forEach((textElement) =>
-        drawCenteredTextElement(context, textElement, canvasRect, canvasZoom),
-      );
+    drawExportTextStack(context, item, bounds, "span, small");
   });
 }
 
@@ -1446,39 +1444,85 @@ function drawExportTextBox(
   }
 }
 
-function drawCenteredTextElement(
+function drawExportTextStack(
   context: CanvasRenderingContext2D,
-  element: HTMLElement,
-  canvasRect: DOMRect,
-  canvasZoom: number,
+  containerElement: HTMLElement,
+  bounds: CanvasRect,
+  selector: string,
 ): void {
-  const text = getElementText(element).trim();
+  const containerStyle = getComputedStyle(containerElement);
+  const paddingTop = parseCssPixels(containerStyle.paddingTop, 0);
+  const paddingRight = parseCssPixels(containerStyle.paddingRight, 0);
+  const paddingBottom = parseCssPixels(containerStyle.paddingBottom, 0);
+  const paddingLeft = parseCssPixels(containerStyle.paddingLeft, 0);
+  const fieldGap = parseCssPixels(containerStyle.gap, 3);
+  const textWidth = Math.max(bounds.width - paddingLeft - paddingRight, 1);
+  const textElements = Array.from(
+    containerElement.querySelectorAll<HTMLElement>(selector),
+  );
+  const textBlocks = textElements
+    .map((textElement) => getWrappedExportTextBlock(context, textElement, textWidth))
+    .filter((textBlock) => textBlock.length > 0);
 
-  if (!text) {
+  if (textBlocks.length === 0) {
     return;
   }
 
-  const bounds = getElementCanvasRect(element, canvasRect, canvasZoom);
+  const textLines = textBlocks.flatMap((textBlock) => textBlock);
+  const totalLineHeight = textLines.reduce(
+    (height, line) => height + line.lineHeight,
+    0,
+  );
+  const totalGapHeight = fieldGap * Math.max(textBlocks.length - 1, 0);
+  const innerHeight = Math.max(bounds.height - paddingTop - paddingBottom, 1);
+  const totalTextHeight = totalLineHeight + totalGapHeight;
+  let y =
+    bounds.top +
+    paddingTop +
+    Math.max((innerHeight - totalTextHeight) / 2, 0);
+
+  context.save();
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  textBlocks.forEach((textBlock, blockIndex) => {
+    textBlock.forEach((line) => {
+      applyCanvasTextStyle(context, line.computedStyle);
+      context.fillText(
+        line.text,
+        bounds.left + paddingLeft + textWidth / 2,
+        y + line.lineHeight / 2,
+        textWidth,
+      );
+      y += line.lineHeight;
+    });
+
+    if (blockIndex < textBlocks.length - 1) {
+      y += fieldGap;
+    }
+  });
+  context.restore();
+}
+
+function getWrappedExportTextBlock(
+  context: CanvasRenderingContext2D,
+  element: HTMLElement,
+  maxWidth: number,
+): ExportTextLine[] {
+  const text = getElementText(element).trim();
+
+  if (!text) {
+    return [];
+  }
+
   const computedStyle = getComputedStyle(element);
   const fontSize = parseCssPixels(computedStyle.fontSize, 14);
   const lineHeight = parseLineHeight(computedStyle.lineHeight, fontSize);
-  const lines = wrapCanvasText(context, text, bounds.width, computedStyle);
-  const totalTextHeight = lines.length * lineHeight;
-  const startY = bounds.top + Math.max((bounds.height - totalTextHeight) / 2, 0);
 
-  context.save();
-  applyCanvasTextStyle(context, computedStyle);
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  lines.forEach((line, index) => {
-    context.fillText(
-      line,
-      bounds.left + bounds.width / 2,
-      startY + index * lineHeight + lineHeight / 2,
-      bounds.width,
-    );
-  });
-  context.restore();
+  return wrapCanvasText(context, text, maxWidth, computedStyle).map((line) => ({
+    text: line,
+    computedStyle,
+    lineHeight,
+  }));
 }
 
 function drawTextBoxText(
@@ -1627,44 +1671,51 @@ function drawRoundedRect(
     lineWidth: number;
   },
 ): void {
+  const strokeInset = Math.max(options.lineWidth / 2, 0);
+  const rect = {
+    left: bounds.left + strokeInset,
+    top: bounds.top + strokeInset,
+    width: Math.max(bounds.width - options.lineWidth, 0),
+    height: Math.max(bounds.height - options.lineWidth, 0),
+  };
   const safeRadius = Math.max(
-    Math.min(radius, bounds.width / 2, bounds.height / 2),
+    Math.min(radius - strokeInset, rect.width / 2, rect.height / 2),
     0,
   );
 
   context.save();
   context.beginPath();
-  context.moveTo(bounds.left + safeRadius, bounds.top);
-  context.lineTo(bounds.left + bounds.width - safeRadius, bounds.top);
+  context.moveTo(rect.left + safeRadius, rect.top);
+  context.lineTo(rect.left + rect.width - safeRadius, rect.top);
   context.quadraticCurveTo(
-    bounds.left + bounds.width,
-    bounds.top,
-    bounds.left + bounds.width,
-    bounds.top + safeRadius,
+    rect.left + rect.width,
+    rect.top,
+    rect.left + rect.width,
+    rect.top + safeRadius,
   );
   context.lineTo(
-    bounds.left + bounds.width,
-    bounds.top + bounds.height - safeRadius,
+    rect.left + rect.width,
+    rect.top + rect.height - safeRadius,
   );
   context.quadraticCurveTo(
-    bounds.left + bounds.width,
-    bounds.top + bounds.height,
-    bounds.left + bounds.width - safeRadius,
-    bounds.top + bounds.height,
+    rect.left + rect.width,
+    rect.top + rect.height,
+    rect.left + rect.width - safeRadius,
+    rect.top + rect.height,
   );
-  context.lineTo(bounds.left + safeRadius, bounds.top + bounds.height);
+  context.lineTo(rect.left + safeRadius, rect.top + rect.height);
   context.quadraticCurveTo(
-    bounds.left,
-    bounds.top + bounds.height,
-    bounds.left,
-    bounds.top + bounds.height - safeRadius,
+    rect.left,
+    rect.top + rect.height,
+    rect.left,
+    rect.top + rect.height - safeRadius,
   );
-  context.lineTo(bounds.left, bounds.top + safeRadius);
+  context.lineTo(rect.left, rect.top + safeRadius);
   context.quadraticCurveTo(
-    bounds.left,
-    bounds.top,
-    bounds.left + safeRadius,
-    bounds.top,
+    rect.left,
+    rect.top,
+    rect.left + safeRadius,
+    rect.top,
   );
   context.closePath();
   context.fillStyle = options.fillStyle;
