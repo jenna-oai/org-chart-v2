@@ -96,6 +96,7 @@ export function App() {
     () => textBoxes.find((textBox) => textBox.id === selectedTextBoxId) ?? null,
     [selectedTextBoxId, textBoxes],
   );
+  const shouldShowStarterHelp = chart.nodes.length <= 1;
 
   useEffect(() => {
     saveEditorSnapshot(editorState);
@@ -525,7 +526,6 @@ export function App() {
             onCreateConnection={createDraggedConnection}
             onChangeNode={updateNode}
             onChangeTextBox={updateTextBox}
-            onAddFirstEmployee={() => addItem("employee")}
             onSelectNode={(nodeId) => {
               setIsChartTitleSelected(false);
               setEditorState((currentState) => ({
@@ -564,7 +564,11 @@ export function App() {
               onDelete={deleteSelectedNode}
               onUndo={undo}
             />
-            <AddNodePanel selectedNode={selectedNode} onAddItem={addItem} />
+            <AddNodePanel
+              selectedNode={selectedNode}
+              showStarterHint={shouldShowStarterHelp}
+              onAddItem={addItem}
+            />
             <NodeInspector
               chart={chart}
               autoFocusNodeId={inspectorAutoFocusNodeId}

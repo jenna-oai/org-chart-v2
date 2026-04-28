@@ -56,7 +56,6 @@ interface OrgChartCanvasProps {
   ) => void;
   onChangeNode: (node: OrgNode) => void;
   onChangeTextBox: (textBox: CanvasTextBoxModel) => void;
-  onAddFirstEmployee: () => void;
   onSelectNode: (nodeId: string) => void;
   onSelectTextBox: (textBoxId: string) => void;
 }
@@ -70,10 +69,10 @@ export function OrgChartCanvas({
   onCreateConnection,
   onChangeNode,
   onChangeTextBox,
-  onAddFirstEmployee,
   onSelectNode,
   onSelectTextBox,
 }: OrgChartCanvasProps) {
+  const shellRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_CANVAS_ZOOM);
   const [visibleNodeTypes, setVisibleNodeTypes] = useState<
@@ -186,6 +185,34 @@ export function OrgChartCanvas({
     };
   }, []);
 
+  useEffect(() => {
+    const shellElement = shellRef.current;
+
+    if (!shellElement) {
+      return;
+    }
+
+    const handlePinchZoom = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      const zoomDelta = event.deltaY < 0 ? CANVAS_ZOOM_STEP : -CANVAS_ZOOM_STEP;
+      changeZoom(zoomDelta);
+    };
+
+    shellElement.addEventListener("wheel", handlePinchZoom, { passive: false });
+
+    return () => {
+      shellElement.removeEventListener("wheel", handlePinchZoom);
+    };
+  }, []);
+
   const startConnectionDrag = (
     layoutNode: LayoutNode,
     handlePosition: ConnectionHandlePosition,
@@ -229,7 +256,11 @@ export function OrgChartCanvas({
   };
 
   return (
-    <section className="canvas-shell" aria-label={`${chart.name} org chart`}>
+    <section
+      ref={shellRef}
+      className="canvas-shell"
+      aria-label={`${chart.name} org chart`}
+    >
       <div
         className="canvas-zoom-stage"
         data-canvas-zoom={zoom}
@@ -248,6 +279,8 @@ export function OrgChartCanvas({
             ref={canvasRef}
             className={`org-chart-canvas ${
               connectionDrag ? "org-chart-canvas--dragging-connection" : ""
+            } ${
+              shouldShowStarterHelp ? "org-chart-canvas--starter-help" : ""
             }`}
             style={{
               width: canvasWidth,
@@ -280,23 +313,6 @@ export function OrgChartCanvas({
               ) : null}
             </svg>
             <div className="node-layer">
-              {shouldShowStarterHelp ? (
-                <div className="canvas-starter-help" role="status">
-                  <h2>
-                    {chart.nodes.length === 0
-                      ? "Start your org chart"
-                      : "Keep building"}
-                  </h2>
-                  <p>
-                    {chart.nodes.length === 0
-                      ? "Add the first employee to begin building reporting lines."
-                      : "Add another employee to start defining the reporting line."}
-                  </p>
-                  <button type="button" onClick={onAddFirstEmployee}>
-                    Add employee
-                  </button>
-                </div>
-              ) : null}
               {layout.nodes.map((layoutNode) => (
                 <OrgNodeCard
                   key={layoutNode.node.id}
@@ -321,6 +337,20 @@ export function OrgChartCanvas({
           </div>
         </div>
       </div>
+      {shouldShowStarterHelp ? (
+        <div className="canvas-starter-help" role="status">
+          <h2>
+            {chart.nodes.length === 0
+              ? "Start in the sidebar"
+              : "Keep going in the sidebar"}
+          </h2>
+          <p>
+            {chart.nodes.length === 0
+              ? "Use Add New in the sidebar and choose Employee."
+              : "Use Add New in the sidebar to add another employee or role."}
+          </p>
+        </div>
+      ) : null}
       <div className="canvas-controls" aria-label="Canvas controls">
         <details className="canvas-filter-control">
           <summary>Filter</summary>

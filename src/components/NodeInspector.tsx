@@ -114,7 +114,7 @@ export function NodeInspector({
   if (!node) {
     return (
       <section className="node-inspector node-inspector--empty">
-        <h2>Node inspector</h2>
+        <h2>Details</h2>
         <p>Select a node to edit its contents.</p>
       </section>
     );
@@ -125,7 +125,7 @@ export function NodeInspector({
       <div className="inspector-heading">
         <div>
           <p className="inspector-kicker">{nodeTypeLabels[node.type]}</p>
-          <h2>Node inspector</h2>
+          <h2>Details</h2>
         </div>
         <span className={`inspector-type-dot inspector-type-dot--${node.type}`} />
       </div>

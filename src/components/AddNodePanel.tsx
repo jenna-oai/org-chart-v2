@@ -5,6 +5,7 @@ export type AddMenuItemType = OrgNodeType | "text_box";
 
 interface AddNodePanelProps {
   selectedNode: OrgNode | null;
+  showStarterHint?: boolean;
   onAddItem: (itemType: AddMenuItemType) => void;
 }
 
@@ -16,13 +17,22 @@ const addNodeOptions: Array<{ label: string; value: AddMenuItemType }> = [
   { label: "Text box", value: "text_box" },
 ];
 
-export function AddNodePanel({ selectedNode, onAddItem }: AddNodePanelProps) {
+export function AddNodePanel({
+  selectedNode,
+  showStarterHint = false,
+  onAddItem,
+}: AddNodePanelProps) {
   const selectedDisplayText = selectedNode
     ? getNodeDisplayText(selectedNode).primary
     : null;
 
   return (
-    <section className="add-node-panel" aria-label="Add node">
+    <section
+      className={`add-node-panel ${
+        showStarterHint ? "add-node-panel--starter-highlight" : ""
+      }`}
+      aria-label="Add node"
+    >
       <select
         aria-label="Add New"
         defaultValue=""
