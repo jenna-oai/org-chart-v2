@@ -342,11 +342,21 @@ select {
   border: 2px solid #000000;
   border-radius: 15px;
   box-shadow: 0 8px 18px rgb(31 41 51 / 8%);
-  cursor: pointer;
+  cursor: grab;
   user-select: none;
   transition:
     box-shadow 120ms ease,
     transform 180ms ease;
+}
+
+.org-node-card--order-dragging {
+  z-index: 4;
+  cursor: grabbing;
+  transition: none;
+}
+
+.org-chart-canvas--ordering-node .org-node-card:not(.org-node-card--order-dragging) {
+  pointer-events: none;
 }
 
 .connection-handle {
@@ -484,11 +494,10 @@ select {
 
 .canvas-text-box {
   position: absolute;
-  display: flex;
-  flex-direction: column;
+  display: block;
   min-width: 160px;
   min-height: 96px;
-  overflow: auto;
+  overflow: hidden;
   color: #17202a;
   background: #ffffff;
   border: 1px solid #9aa8b8;
@@ -505,16 +514,38 @@ select {
 }
 
 .canvas-text-box-drag-handle {
-  flex: 0 0 18px;
-  background: #9a9a9a;
-  border-bottom: 1px solid #d8e0ea;
-  cursor: move;
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: 10px;
+  background: transparent;
+  border: 0;
+  cursor: grab;
+}
+
+.canvas-text-box-drag-handle:active {
+  cursor: grabbing;
+}
+
+.canvas-text-box:hover .canvas-text-box-drag-handle::after,
+.canvas-text-box--selected .canvas-text-box-drag-handle::after {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 32px;
+  height: 3px;
+  background: rgb(31 41 51 / 18%);
+  border-radius: 999px;
+  transform: translateX(-50%);
+  content: "";
 }
 
 .canvas-text-box-editor {
-  flex: 1;
-  min-height: 0;
-  padding: 10px 12px;
+  width: 100%;
+  height: 100%;
+  padding: 16px 12px 10px;
   overflow: auto;
   direction: ltr;
   font-size: 14px;

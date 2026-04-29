@@ -25,6 +25,14 @@ interface ConnectionDragState {
   current: CanvasPoint;
 }
 
+interface NodeOrderDragState {
+  nodeId: string;
+  pointerId: number;
+  startClientX: number;
+  currentClientX: number;
+  hasMoved: boolean;
+}
+
 const MIN_CANVAS_ZOOM = 0.5;
 const MAX_CANVAS_ZOOM = 1.5;
 const DEFAULT_CANVAS_ZOOM = 1;
@@ -56,6 +64,7 @@ interface OrgChartCanvasProps {
   ) => void;
   onChangeNode: (node: OrgNode) => void;
   onChangeTextBox: (textBox: CanvasTextBoxModel) => void;
+  onReorderNodes: (orderedNodeIds: string[]) => void;
   onSelectNode: (nodeId: string) => void;
   onSelectTextBox: (textBoxId: string) => void;
 }
@@ -69,6 +78,7 @@ export function OrgChartCanvas({
   onCreateConnection,
   onChangeNode,
   onChangeTextBox,
+  onReorderNodes,
   onSelectNode,
   onSelectTextBox,
 }: OrgChartCanvasProps) {
@@ -79,6 +89,9 @@ export function OrgChartCanvas({
     Set<CanvasFilterNodeType>
   >(() => new Set(filterNodeTypes.map((option) => option.value)));
   const [connectionDrag, setConnectionDrag] = useState<ConnectionDragState | null>(
+    null,
+  );
+  const [nodeOrderDrag, setNodeOrderDrag] = useState<NodeOrderDragState | null>(
     null,
   );
   const filteredChart = useMemo(
@@ -148,6 +161,63 @@ export function OrgChartCanvas({
       window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [connectionDrag, onCreateConnection, zoom]);
+
+  useEffect(() => {
+    if (!nodeOrderDrag) {
+      return;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== nodeOrderDrag.pointerId) {
+        return;
+      }
+
+      setNodeOrderDrag((currentDrag) => {
+        if (!currentDrag) {
+          return null;
+        }
+
+        const deltaX = (event.clientX - currentDrag.startClientX) / zoom;
+
+        return {
+          ...currentDrag,
+          currentClientX: event.clientX,
+          hasMoved: currentDrag.hasMoved || Math.abs(deltaX) > 6,
+        };
+      });
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== nodeOrderDrag.pointerId) {
+        return;
+      }
+
+      const completedDrag = {
+        ...nodeOrderDrag,
+        currentClientX: event.clientX,
+        hasMoved:
+          nodeOrderDrag.hasMoved ||
+          Math.abs((event.clientX - nodeOrderDrag.startClientX) / zoom) > 6,
+      };
+      const orderedNodeIds = completedDrag.hasMoved
+        ? getOrderedNodeIdsAfterHorizontalDrag(layout, completedDrag, zoom)
+        : null;
+
+      setNodeOrderDrag(null);
+
+      if (orderedNodeIds) {
+        onReorderNodes(orderedNodeIds);
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [layout, nodeOrderDrag, onReorderNodes, zoom]);
 
   useEffect(() => {
     const handleKeyboardZoom = (event: KeyboardEvent) => {
@@ -238,6 +308,24 @@ export function OrgChartCanvas({
     });
   };
 
+  const startNodeOrderDrag = (
+    layoutNode: LayoutNode,
+    pointerId: number,
+    clientX: number,
+  ) => {
+    if (layoutNode.node.type === "report_list") {
+      return;
+    }
+
+    setNodeOrderDrag({
+      nodeId: layoutNode.node.id,
+      pointerId,
+      startClientX: clientX,
+      currentClientX: clientX,
+      hasMoved: false,
+    });
+  };
+
   const toggleFilterNodeType = (
     nodeType: CanvasFilterNodeType,
     isVisible: boolean,
@@ -280,6 +368,8 @@ export function OrgChartCanvas({
             className={`org-chart-canvas ${
               connectionDrag ? "org-chart-canvas--dragging-connection" : ""
             } ${
+              nodeOrderDrag ? "org-chart-canvas--ordering-node" : ""
+            } ${
               shouldShowStarterHelp ? "org-chart-canvas--starter-help" : ""
             }`}
             style={{
@@ -318,7 +408,14 @@ export function OrgChartCanvas({
                   key={layoutNode.node.id}
                   layoutNode={layoutNode}
                   isSelected={getSelectableNodeId(layoutNode.node) === selectedNodeId}
+                  orderDragOffsetX={getNodeOrderDragOffsetX(
+                    layoutNode,
+                    nodeOrderDrag,
+                    zoom,
+                  )}
+                  isOrderDragging={nodeOrderDrag?.nodeId === layoutNode.node.id}
                   onBeginConnectionDrag={startConnectionDrag}
+                  onBeginNodeOrderDrag={startNodeOrderDrag}
                   onChangeNode={onChangeNode}
                   onSelect={onSelectNode}
                 />
@@ -413,6 +510,101 @@ export function OrgChartCanvas({
 
 function clampZoom(zoom: number): number {
   return Math.min(MAX_CANVAS_ZOOM, Math.max(MIN_CANVAS_ZOOM, zoom));
+}
+
+function getNodeOrderDragOffsetX(
+  layoutNode: LayoutNode,
+  nodeOrderDrag: NodeOrderDragState | null,
+  zoom: number,
+): number {
+  if (!nodeOrderDrag || nodeOrderDrag.nodeId !== layoutNode.node.id) {
+    return 0;
+  }
+
+  return (nodeOrderDrag.currentClientX - nodeOrderDrag.startClientX) / zoom;
+}
+
+function getOrderedNodeIdsAfterHorizontalDrag(
+  layout: ReturnType<typeof calculateOrgChartLayout>,
+  nodeOrderDrag: NodeOrderDragState,
+  zoom: number,
+): string[] | null {
+  const siblingNodes = getReorderSiblingLayoutNodes(layout, nodeOrderDrag.nodeId);
+
+  if (siblingNodes.length < 2) {
+    return null;
+  }
+
+  const draggedNode = siblingNodes.find(
+    (layoutNode) => layoutNode.node.id === nodeOrderDrag.nodeId,
+  );
+
+  if (!draggedNode) {
+    return null;
+  }
+
+  const dragOffsetX =
+    (nodeOrderDrag.currentClientX - nodeOrderDrag.startClientX) / zoom;
+  const draggedCenterX = draggedNode.x + draggedNode.width / 2 + dragOffsetX;
+  const orderedSiblingNodes = [...siblingNodes].sort(
+    (firstNode, secondNode) => firstNode.x - secondNode.x,
+  );
+  const siblingNodesWithoutDragged = orderedSiblingNodes.filter(
+    (layoutNode) => layoutNode.node.id !== nodeOrderDrag.nodeId,
+  );
+  const insertionIndex = siblingNodesWithoutDragged.findIndex((layoutNode) => {
+    return draggedCenterX < layoutNode.x + layoutNode.width / 2;
+  });
+  const nextSiblingNodes = [...siblingNodesWithoutDragged];
+
+  nextSiblingNodes.splice(
+    insertionIndex === -1 ? nextSiblingNodes.length : insertionIndex,
+    0,
+    draggedNode,
+  );
+
+  const orderedNodeIds = nextSiblingNodes
+    .map((layoutNode) => layoutNode.node.id)
+    .filter((nodeId) => !nodeId.startsWith("report-list-"));
+  const currentNodeIds = orderedSiblingNodes
+    .map((layoutNode) => layoutNode.node.id)
+    .filter((nodeId) => !nodeId.startsWith("report-list-"));
+
+  return orderedNodeIds.every((nodeId, index) => nodeId === currentNodeIds[index])
+    ? null
+    : orderedNodeIds;
+}
+
+function getReorderSiblingLayoutNodes(
+  layout: ReturnType<typeof calculateOrgChartLayout>,
+  nodeId: string,
+): LayoutNode[] {
+  const incomingConnection = layout.connections.find(
+    (connection) => connection.toNodeId === nodeId,
+  );
+
+  if (!incomingConnection) {
+    const childNodeIds = new Set(
+      layout.connections.map((connection) => connection.toNodeId),
+    );
+
+    return layout.nodes
+      .filter(
+        (layoutNode) =>
+          !childNodeIds.has(layoutNode.node.id) &&
+          layoutNode.node.type !== "report_list",
+      )
+      .sort((firstNode, secondNode) => firstNode.x - secondNode.x);
+  }
+
+  return layout.connections
+    .filter((connection) => connection.fromNodeId === incomingConnection.fromNodeId)
+    .map((connection) => layout.nodePositions.get(connection.toNodeId))
+    .filter(
+      (layoutNode): layoutNode is LayoutNode =>
+        layoutNode !== undefined && layoutNode.node.type !== "report_list",
+    )
+    .sort((firstNode, secondNode) => firstNode.x - secondNode.x);
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null): boolean {

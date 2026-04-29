@@ -325,6 +325,54 @@ export function App() {
     });
   };
 
+  const reorderNodes = (orderedNodeIds: string[]) => {
+    if (orderedNodeIds.length < 2) {
+      return;
+    }
+
+    commitEditorState((currentState) => {
+      const orderedNodeIdSet = new Set(orderedNodeIds);
+      const nodesById = new Map(
+        currentState.chart.nodes.map((node) => [node.id, node]),
+      );
+
+      if (orderedNodeIds.some((nodeId) => !nodesById.has(nodeId))) {
+        return currentState;
+      }
+
+      let hasInsertedOrderedNodes = false;
+      const nextNodes = currentState.chart.nodes.flatMap((node) => {
+        if (!orderedNodeIdSet.has(node.id)) {
+          return [node];
+        }
+
+        if (hasInsertedOrderedNodes) {
+          return [];
+        }
+
+        hasInsertedOrderedNodes = true;
+        return orderedNodeIds
+          .map((nodeId) => nodesById.get(nodeId))
+          .filter((orderedNode): orderedNode is OrgNode => Boolean(orderedNode));
+      });
+
+      if (
+        nextNodes.length === currentState.chart.nodes.length &&
+        nextNodes.every((node, index) => node.id === currentState.chart.nodes[index].id)
+      ) {
+        return currentState;
+      }
+
+      return {
+        ...currentState,
+        chart: {
+          ...currentState.chart,
+          nodes: nextNodes,
+        },
+      };
+    });
+  };
+
   const undo = () => {
     const previousState = undoStack[undoStack.length - 1];
 
@@ -527,6 +575,7 @@ export function App() {
             onCreateConnection={createDraggedConnection}
             onChangeNode={updateNode}
             onChangeTextBox={updateTextBox}
+            onReorderNodes={reorderNodes}
             onSelectNode={(nodeId) => {
               setIsChartTitleSelected(false);
               setEditorState((currentState) => ({

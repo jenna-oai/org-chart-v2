@@ -50,6 +50,11 @@ const REPORT_LIST_ROW_GAP = 8;
 const HORIZONTAL_GAP = 42;
 const VERTICAL_GAP = 78;
 const CANVAS_PADDING = 48;
+const REPORT_LIST_TYPE_ORDER: Record<ReportTargetNode["type"], number> = {
+  employee: 0,
+  open_role: 1,
+  approved_role: 2,
+};
 
 export function calculateOrgChartLayout(
   chart: OrgChart,
@@ -57,6 +62,9 @@ export function calculateOrgChartLayout(
 ): OrgChartLayout {
   const visualGraph = getVisualGraph(chart, listViewOwnerIds);
   const nodesById = new Map(visualGraph.nodes.map((node) => [node.id, node]));
+  const visualNodeOrderById = new Map(
+    visualGraph.nodes.map((node, index) => [node.id, index]),
+  );
   const visualConnections = visualGraph.connections;
   const childConnectionsByNodeId = getChildConnectionsByNodeId(visualConnections);
   const incomingConnectionCounts = getIncomingConnectionCounts(visualConnections);
@@ -148,7 +156,12 @@ export function calculateOrgChartLayout(
   const getChildren = (nodeId: string): VisualOrgNode[] =>
     (childConnectionsByNodeId.get(nodeId) ?? [])
       .map((connection) => nodesById.get(connection.toNodeId))
-      .filter((node): node is VisualOrgNode => Boolean(node));
+      .filter((node): node is VisualOrgNode => Boolean(node))
+      .sort(
+        (firstNode, secondNode) =>
+          (visualNodeOrderById.get(firstNode.id) ?? 0) -
+          (visualNodeOrderById.get(secondNode.id) ?? 0),
+      );
 
   const measureSubtree = (node: VisualOrgNode): number => {
     if (measuredWidths.has(node.id)) {
@@ -368,10 +381,23 @@ function getListOccupantNodes(
   const ownerNode = chart.nodes.find((node) => node.id === ownerNodeId);
 
   if (ownerNode?.type === "vertical") {
-    return getContainedVerticalNodes(ownerNodeId, chart);
+    return sortReportListOccupants(getContainedVerticalNodes(ownerNodeId, chart));
   }
 
-  return getDirectReportNodes(ownerNodeId, chart);
+  return sortReportListOccupants(getDirectReportNodes(ownerNodeId, chart));
+}
+
+function sortReportListOccupants(nodes: ReportTargetNode[]): ReportTargetNode[] {
+  return nodes
+    .map((node, index) => ({ node, index }))
+    .sort((first, second) => {
+      const typeDifference =
+        REPORT_LIST_TYPE_ORDER[first.node.type] -
+        REPORT_LIST_TYPE_ORDER[second.node.type];
+
+      return typeDifference === 0 ? first.index - second.index : typeDifference;
+    })
+    .map(({ node }) => node);
 }
 
 function getDirectReportNodes(ownerNodeId: string, chart: OrgChart): ReportTargetNode[] {

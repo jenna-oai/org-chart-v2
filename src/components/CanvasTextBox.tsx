@@ -26,6 +26,16 @@ export function CanvasTextBox({
     startX: number;
     startY: number;
   } | null>(null);
+  const updateTextBoxHtml = () => {
+    if (!editorRef.current) {
+      return;
+    }
+
+    onChange({
+      ...textBox,
+      html: editorRef.current.innerHTML,
+    });
+  };
 
   useEffect(() => {
     if (!editorRef.current) {
@@ -164,30 +174,28 @@ export function CanvasTextBox({
         role="textbox"
         aria-label="Text box note"
         suppressContentEditableWarning
-        onInput={(event) =>
-          onChange({
-            ...textBox,
-            html: event.currentTarget.innerHTML,
-          })
-        }
+        onInput={updateTextBoxHtml}
         onKeyDown={(event) => {
-          if (!event.metaKey) {
+          if (!event.metaKey && !event.ctrlKey) {
             return;
           }
 
           if (event.key.toLowerCase() === "b") {
             event.preventDefault();
             document.execCommand("bold");
+            updateTextBoxHtml();
           }
 
           if (event.key.toLowerCase() === "i") {
             event.preventDefault();
             document.execCommand("italic");
+            updateTextBoxHtml();
           }
 
           if (event.key.toLowerCase() === "u") {
             event.preventDefault();
             document.execCommand("underline");
+            updateTextBoxHtml();
           }
         }}
         onClick={(event) => {

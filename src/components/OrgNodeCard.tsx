@@ -12,11 +12,18 @@ import type { LayoutNode } from "../utils/layout";
 interface OrgNodeCardProps {
   layoutNode: LayoutNode;
   isSelected: boolean;
+  isOrderDragging: boolean;
+  orderDragOffsetX: number;
   onBeginConnectionDrag: (
     layoutNode: LayoutNode,
     handlePosition: ConnectionHandlePosition,
     clientX: number,
     clientY: number,
+  ) => void;
+  onBeginNodeOrderDrag: (
+    layoutNode: LayoutNode,
+    pointerId: number,
+    clientX: number,
   ) => void;
   onChangeNode: (node: OrgNode) => void;
   onSelect: (nodeId: string) => void;
@@ -25,7 +32,10 @@ interface OrgNodeCardProps {
 export function OrgNodeCard({
   layoutNode,
   isSelected,
+  isOrderDragging,
+  orderDragOffsetX,
   onBeginConnectionDrag,
+  onBeginNodeOrderDrag,
   onChangeNode,
   onSelect,
 }: OrgNodeCardProps) {
@@ -48,9 +58,9 @@ export function OrgNodeCard({
       tabIndex={0}
       className={`org-node-card org-node-card--${layoutNode.node.type} ${
         isSelected ? "org-node-card--selected" : ""
-      }`}
+      } ${isOrderDragging ? "org-node-card--order-dragging" : ""}`}
       style={{
-        transform: `translate(${layoutNode.x}px, ${layoutNode.y}px)`,
+        transform: `translate(${layoutNode.x + orderDragOffsetX}px, ${layoutNode.y}px)`,
         width: layoutNode.width,
         height: layoutNode.height,
         ...(nodeBackgroundColor ? { backgroundColor: nodeBackgroundColor } : {}),
@@ -59,6 +69,18 @@ export function OrgNodeCard({
       data-node-id={
         layoutNode.node.type === "report_list" ? undefined : layoutNode.node.id
       }
+      onPointerDown={(event) => {
+        if (
+          event.button !== 0 ||
+          layoutNode.node.type === "report_list" ||
+          isNodeOrderDragIgnoredTarget(event.target)
+        ) {
+          return;
+        }
+
+        onSelect(selectableNodeId);
+        onBeginNodeOrderDrag(layoutNode, event.pointerId, event.clientX);
+      }}
       onClick={() => onSelect(selectableNodeId)}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) {
@@ -281,6 +303,18 @@ function estimateTextareaRows(value: string, className: string): number {
   return value.split(/\r?\n/).reduce((rowCount, line) => {
     return rowCount + Math.max(Math.ceil(line.length / maxCharactersPerLine), 1);
   }, 0);
+}
+
+function isNodeOrderDragIgnoredTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return true;
+  }
+
+  return Boolean(
+    target.closest(
+      "button, input, select, textarea, [contenteditable='true'], [data-connection-handle]",
+    ),
+  );
 }
 
 interface ConnectionHandleProps {
