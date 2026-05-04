@@ -5,6 +5,7 @@ import type {
   EmployeeNode,
   OpenRoleNode,
   OrgChart,
+  OrgConnection,
   OrgNodeBackgroundColor,
   OrgNode,
   OrgNodeType,
@@ -28,7 +29,11 @@ interface NodeInspectorProps {
   textBox: CanvasTextBox | null;
   onChange: (node: OrgNode) => void;
   onChangeTextBox: (textBox: CanvasTextBox) => void;
-  onChangeManager: (nodeId: string, managerNodeId: string | null) => void;
+  onChangeManager: (
+    nodeId: string,
+    managerNodeId: string | null,
+    connectionStyle: UplineConnectionStyle,
+  ) => void;
   onChangeOwnedVertical: (
     ownerNodeId: string,
     verticalNodeId: string,
@@ -559,7 +564,11 @@ interface RelationshipFieldsProps {
   chart: OrgChart;
   node: ReportTargetNode;
   onChange: (node: OrgNode) => void;
-  onChangeManager: (nodeId: string, managerNodeId: string | null) => void;
+  onChangeManager: (
+    nodeId: string,
+    managerNodeId: string | null,
+    connectionStyle: UplineConnectionStyle,
+  ) => void;
   onChangeOwnedVertical: (
     ownerNodeId: string,
     verticalNodeId: string,
@@ -576,15 +585,28 @@ function RelationshipFields({
   onChangeOwnedVertical,
   onChangeVertical,
 }: RelationshipFieldsProps) {
+  const managerConnections = getIncomingConnections(node.id, chart).filter(
+    (connection) => connection.connectionType === "reports_to",
+  );
   const currentManagerId =
-    getIncomingConnections(node.id, chart).find(
-      (connection) => connection.connectionType === "reports_to",
+    managerConnections.find(
+      (connection) => getReportsToConnectionStyle(connection) === "solid",
+    )?.fromNodeId ?? "";
+  const currentHashedManagerId =
+    managerConnections.find(
+      (connection) => getReportsToConnectionStyle(connection) === "hashed",
     )?.fromNodeId ?? "";
   const currentVerticalId =
     getIncomingConnections(node.id, chart).find(
       (connection) => connection.connectionType === "belongs_to_vertical",
     )?.fromNodeId ?? "";
   const managerOptions = getEligibleManagers(node, chart);
+  const primaryManagerOptions = managerOptions.filter(
+    (manager) => manager.id !== currentHashedManagerId,
+  );
+  const hashedManagerOptions = managerOptions.filter(
+    (manager) => manager.id !== currentManagerId,
+  );
   const verticalOptions = chart.nodes.filter(
     (chartNode): chartNode is VerticalNode => chartNode.type === "vertical",
   );
@@ -596,11 +618,33 @@ function RelationshipFields({
         label="Manager"
         value={currentManagerId}
         onChange={(managerNodeId) =>
-          onChangeManager(node.id, managerNodeId === "" ? null : managerNodeId)
+          onChangeManager(
+            node.id,
+            managerNodeId === "" ? null : managerNodeId,
+            "solid",
+          )
         }
       >
         <option value="">No manager</option>
-        {managerOptions.map((manager) => (
+        {primaryManagerOptions.map((manager) => (
+          <option key={manager.id} value={manager.id}>
+            {getManagerOptionLabel(manager)}
+          </option>
+        ))}
+      </InspectorSelect>
+      <InspectorSelect
+        label="Hashed manager"
+        value={currentHashedManagerId}
+        onChange={(managerNodeId) =>
+          onChangeManager(
+            node.id,
+            managerNodeId === "" ? null : managerNodeId,
+            "hashed",
+          )
+        }
+      >
+        <option value="">No hashed manager</option>
+        {hashedManagerOptions.map((manager) => (
           <option key={manager.id} value={manager.id}>
             {getManagerOptionLabel(manager)}
           </option>
@@ -887,6 +931,12 @@ function getEligibleManagers(
       chartNode.id !== node.id &&
       !descendantIds.has(chartNode.id),
   );
+}
+
+function getReportsToConnectionStyle(
+  connection: OrgConnection,
+): UplineConnectionStyle {
+  return connection.connectionStyle ?? "solid";
 }
 
 function getManagerOptionLabel(manager: ReportTargetNode): string {

@@ -22,7 +22,7 @@ export function OrgConnectionLine({
   const endY = toNode.y;
   const midY = startY + Math.max((endY - startY) / 2, 24);
   const path = `M ${startX} ${startY} V ${midY} H ${endX} V ${endY}`;
-  const uplineStyle = getUplineConnectionStyle(toNode);
+  const uplineStyle = getUplineConnectionStyle(connection, toNode);
 
   return (
     <path
@@ -33,7 +33,14 @@ export function OrgConnectionLine({
   );
 }
 
-function getUplineConnectionStyle(node: LayoutNode): UplineConnectionStyle {
+function getUplineConnectionStyle(
+  connection: OrgConnection,
+  node: LayoutNode,
+): UplineConnectionStyle {
+  if (connection.connectionStyle) {
+    return connection.connectionStyle;
+  }
+
   if ("uplineConnectionStyle" in node.node) {
     return node.node.uplineConnectionStyle ?? "solid";
   }

@@ -40,7 +40,9 @@ export function getManager(
   chart: OrgChart,
 ): ReportTargetNode | null {
   const managerConnection = getIncomingConnections(nodeId, chart).find(
-    (connection) => connection.connectionType === "reports_to",
+    (connection) =>
+      connection.connectionType === "reports_to" &&
+      (connection.connectionStyle ?? "solid") === "solid",
   );
 
   if (!managerConnection) {

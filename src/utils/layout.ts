@@ -66,8 +66,9 @@ export function calculateOrgChartLayout(
     visualGraph.nodes.map((node, index) => [node.id, index]),
   );
   const visualConnections = visualGraph.connections;
-  const childConnectionsByNodeId = getChildConnectionsByNodeId(visualConnections);
-  const incomingConnectionCounts = getIncomingConnectionCounts(visualConnections);
+  const layoutConnections = visualConnections.filter(isStructuralLayoutConnection);
+  const childConnectionsByNodeId = getChildConnectionsByNodeId(layoutConnections);
+  const incomingConnectionCounts = getIncomingConnectionCounts(layoutConnections);
   const positionedNodes = new Map<string, LayoutNode>();
   const measuring = new Set<string>();
   const measuredWidths = new Map<string, number>();
@@ -298,7 +299,10 @@ export function getVisualConnections(connections: OrgConnection[]): OrgConnectio
       verticalByContainedNodeId.set(connection.toNodeId, connection.fromNodeId);
     }
 
-    if (connection.connectionType === "reports_to") {
+    if (
+      connection.connectionType === "reports_to" &&
+      isStructuralLayoutConnection(connection)
+    ) {
       managerByReportNodeId.set(connection.toNodeId, connection.fromNodeId);
     }
   }
@@ -318,6 +322,10 @@ export function getVisualConnections(connections: OrgConnection[]): OrgConnectio
       }
 
       if (connection.connectionType !== "reports_to") {
+        return true;
+      }
+
+      if (!isStructuralLayoutConnection(connection)) {
         return true;
       }
 
@@ -523,6 +531,13 @@ function getConnectionLayoutPriority(connection: OrgConnection): number {
   }
 
   return 2;
+}
+
+function isStructuralLayoutConnection(connection: OrgConnection): boolean {
+  return !(
+    connection.connectionType === "reports_to" &&
+    connection.connectionStyle === "hashed"
+  );
 }
 
 function getChildConnectionsByNodeId(

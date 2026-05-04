@@ -579,13 +579,16 @@ function getReorderSiblingLayoutNodes(
   layout: ReturnType<typeof calculateOrgChartLayout>,
   nodeId: string,
 ): LayoutNode[] {
-  const incomingConnection = layout.connections.find(
+  const structuralConnections = layout.connections.filter(
+    isStructuralCanvasConnection,
+  );
+  const incomingConnection = structuralConnections.find(
     (connection) => connection.toNodeId === nodeId,
   );
 
   if (!incomingConnection) {
     const childNodeIds = new Set(
-      layout.connections.map((connection) => connection.toNodeId),
+      structuralConnections.map((connection) => connection.toNodeId),
     );
 
     return layout.nodes
@@ -597,7 +600,7 @@ function getReorderSiblingLayoutNodes(
       .sort((firstNode, secondNode) => firstNode.x - secondNode.x);
   }
 
-  return layout.connections
+  return structuralConnections
     .filter((connection) => connection.fromNodeId === incomingConnection.fromNodeId)
     .map((connection) => layout.nodePositions.get(connection.toNodeId))
     .filter(
@@ -680,7 +683,10 @@ function getFilterBridgeConnections(
   const ownedVerticalsByNodeId = new Map<string, string[]>();
 
   for (const connection of chart.connections) {
-    if (connection.connectionType === "reports_to") {
+    if (
+      connection.connectionType === "reports_to" &&
+      isStructuralCanvasConnection(connection)
+    ) {
       reportManagerByNodeId.set(connection.toNodeId, connection.fromNodeId);
       const reportChildren =
         reportChildrenByNodeId.get(connection.fromNodeId) ?? [];
@@ -792,7 +798,16 @@ function getNearestVisibleReportsBelowHiddenNode(
 }
 
 function getConnectionKey(connection: OrgConnection): string {
-  return `${connection.connectionType}:${connection.fromNodeId}:${connection.toNodeId}`;
+  return `${connection.connectionType}:${connection.fromNodeId}:${
+    connection.toNodeId
+  }:${connection.connectionStyle ?? "solid"}`;
+}
+
+function isStructuralCanvasConnection(connection: OrgConnection): boolean {
+  return !(
+    connection.connectionType === "reports_to" &&
+    connection.connectionStyle === "hashed"
+  );
 }
 
 function isReportTargetNode(node: OrgNode): boolean {

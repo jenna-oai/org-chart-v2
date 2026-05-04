@@ -19,6 +19,7 @@ import type {
   OrgConnectionType,
   OrgNode,
   OrgNodeType,
+  UplineConnectionStyle,
 } from "./types/orgChart";
 import { validateOrgChart } from "./utils/validation";
 
@@ -171,21 +172,26 @@ export function App() {
     }));
   };
 
-  const updateManager = (nodeId: string, managerNodeId: string | null) => {
+  const updateManager = (
+    nodeId: string,
+    managerNodeId: string | null,
+    connectionStyle: UplineConnectionStyle,
+  ) => {
     commitEditorState((currentState) => ({
       ...currentState,
       chart: {
         ...currentState.chart,
-        connections: replaceIncomingConnection(
+        connections: replaceIncomingReportsToConnection(
           currentState.chart.connections,
           nodeId,
-          "reports_to",
+          connectionStyle,
           managerNodeId
             ? {
-                id: `reports-to-${managerNodeId}-${nodeId}`,
+                id: `reports-to-${connectionStyle}-${managerNodeId}-${nodeId}`,
                 fromNodeId: managerNodeId,
                 toNodeId: nodeId,
                 connectionType: "reports_to",
+                connectionStyle,
               }
             : null,
         ),
@@ -1992,6 +1998,32 @@ function getRenderedCanvasZoom(element: HTMLElement): number {
   return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
 }
 
+function replaceIncomingReportsToConnection(
+  connections: OrgConnection[],
+  nodeId: string,
+  connectionStyle: UplineConnectionStyle,
+  replacement: OrgConnection | null,
+): OrgConnection[] {
+  const remainingConnections = connections.filter((connection) => {
+    if (
+      connection.toNodeId !== nodeId ||
+      connection.connectionType !== "reports_to"
+    ) {
+      return true;
+    }
+
+    if (getReportsToConnectionStyle(connection) === connectionStyle) {
+      return false;
+    }
+
+    return replacement
+      ? connection.fromNodeId !== replacement.fromNodeId
+      : true;
+  });
+
+  return replacement ? [...remainingConnections, replacement] : remainingConnections;
+}
+
 function replaceIncomingConnection(
   connections: OrgConnection[],
   nodeId: string,
@@ -2043,6 +2075,12 @@ function isReportTargetType(node: OrgNode): boolean {
   );
 }
 
+function getReportsToConnectionStyle(
+  connection: OrgConnection,
+): UplineConnectionStyle {
+  return connection.connectionStyle ?? "solid";
+}
+
 function applyRelationshipConnection(
   connections: OrgConnection[],
   connection: OrgConnection,
@@ -2066,7 +2104,9 @@ function applyRelationshipConnection(
         (existingConnection) =>
           !(
             existingConnection.toNodeId === connection.toNodeId &&
-            (existingConnection.connectionType === "reports_to" ||
+            ((existingConnection.connectionType === "reports_to" &&
+              getReportsToConnectionStyle(existingConnection) ===
+                getReportsToConnectionStyle(connection)) ||
               existingConnection.connectionType === "belongs_to_vertical")
           ),
       ),
@@ -2133,6 +2173,9 @@ function createInferredConnection(
     fromNodeId: parentNode.id,
     toNodeId: childNode.id,
     connectionType,
+    ...(connectionType === "reports_to"
+      ? { connectionStyle: "solid" as const }
+      : {}),
   };
 }
 

@@ -4,6 +4,7 @@ import type {
   OrgChartValidationResult,
   OrgConnection,
   OrgNode,
+  UplineConnectionStyle,
 } from "../types/orgChart";
 import { isReportTargetNode } from "./relationships";
 
@@ -63,6 +64,7 @@ export function validateOrgChart(chart: OrgChart): OrgChartValidationResult {
   }
 
   issues.push(...findCircularReportingIssues(chart.connections, nodesById));
+  issues.push(...findDuplicateManagerStyleIssues(chart.connections, nodesById));
 
   return {
     isValid: issues.length === 0,
@@ -112,6 +114,53 @@ function validateConnectionShape(
       });
     }
   }
+}
+
+function findDuplicateManagerStyleIssues(
+  connections: OrgConnection[],
+  nodesById: Map<string, OrgNode>,
+): OrgChartValidationIssue[] {
+  const issues: OrgChartValidationIssue[] = [];
+  const managerConnectionsByNodeAndStyle = new Map<
+    string,
+    Map<UplineConnectionStyle, OrgConnection[]>
+  >();
+
+  for (const connection of connections) {
+    if (
+      connection.connectionType !== "reports_to" ||
+      !nodesById.has(connection.fromNodeId) ||
+      !nodesById.has(connection.toNodeId)
+    ) {
+      continue;
+    }
+
+    const style = connection.connectionStyle ?? "solid";
+    const connectionsByStyle =
+      managerConnectionsByNodeAndStyle.get(connection.toNodeId) ?? new Map();
+    const managerConnections = connectionsByStyle.get(style) ?? [];
+
+    managerConnections.push(connection);
+    connectionsByStyle.set(style, managerConnections);
+    managerConnectionsByNodeAndStyle.set(connection.toNodeId, connectionsByStyle);
+  }
+
+  for (const [nodeId, connectionsByStyle] of managerConnectionsByNodeAndStyle) {
+    for (const [style, managerConnections] of connectionsByStyle) {
+      if (managerConnections.length <= 1) {
+        continue;
+      }
+
+      issues.push({
+        code: "duplicate_manager_connection_style",
+        message: `Node "${nodeId}" has more than one ${style} manager connection.`,
+        nodeId,
+        connectionId: managerConnections[1]?.id,
+      });
+    }
+  }
+
+  return issues;
 }
 
 function findCircularReportingIssues(

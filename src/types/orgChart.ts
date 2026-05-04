@@ -86,6 +86,7 @@ export interface OrgConnection {
   fromNodeId: string;
   toNodeId: string;
   connectionType: OrgConnectionType;
+  connectionStyle?: UplineConnectionStyle;
   notes?: string;
   metadata?: Record<string, unknown>;
 }
