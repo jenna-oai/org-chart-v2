@@ -1233,6 +1233,17 @@ select {
   background: transparent;
 }
 
+.export-resolution-note,
+.export-resolution-error {
+  margin: -4px 0 14px;
+  font-size: 12px;
+}
+
+.export-resolution-error {
+  margin: 10px 0 0;
+  color: #b42318;
+}
+
 .export-size-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

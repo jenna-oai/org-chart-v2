@@ -70,6 +70,9 @@ type WindowWithSaveFilePicker = Window &
   };
 
 const EDITOR_STORAGE_KEY = "org-chart-v2:editor-state";
+const DEFAULT_PNG_EXPORT_SCALE = 3;
+const MAX_PNG_EXPORT_DIMENSION = 12000;
+const MAX_PNG_EXPORT_PIXELS = 80_000_000;
 
 export function App() {
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -818,17 +821,26 @@ function NewChartDialog({ onCancel, onConfirm }: NewChartDialogProps) {
 function PngExportDialog({ onCancel, onExport }: PngExportDialogProps) {
   const previewRef = useRef<HTMLDivElement | null>(null);
   const exportPreview = useMemo(() => getCurrentExportPreview(), []);
-  const [width, setWidth] = useState("1920");
-  const [height, setHeight] = useState(() =>
-    String(Math.max(Math.round(1920 / exportPreview.aspectRatio), 1)),
+  const defaultDimensions = useMemo(
+    () => getDefaultPngExportDimensions(exportPreview),
+    [exportPreview],
   );
+  const [width, setWidth] = useState(() => String(defaultDimensions.width));
+  const [height, setHeight] = useState(() => String(defaultDimensions.height));
   const parsedWidth = Number.parseInt(width, 10);
   const parsedHeight = Number.parseInt(height, 10);
+  const exceedsExportLimits =
+    Number.isFinite(parsedWidth) &&
+    Number.isFinite(parsedHeight) &&
+    (parsedWidth > MAX_PNG_EXPORT_DIMENSION ||
+      parsedHeight > MAX_PNG_EXPORT_DIMENSION ||
+      parsedWidth * parsedHeight > MAX_PNG_EXPORT_PIXELS);
   const canExport =
     Number.isFinite(parsedWidth) &&
     parsedWidth > 0 &&
     Number.isFinite(parsedHeight) &&
-    parsedHeight > 0;
+    parsedHeight > 0 &&
+    !exceedsExportLimits;
 
   useLayoutEffect(() => {
     const previewElement = previewRef.current;
@@ -877,12 +889,19 @@ function PngExportDialog({ onCancel, onExport }: PngExportDialogProps) {
         <h2 id="png-export-heading">Export PNG</h2>
         <p>
           PNG export crops to the visible cells and omits the chart background.
+          The default size is a high-resolution 3x export for sharper text.
         </p>
         <div
           ref={previewRef}
           className="export-preview"
           aria-label="PNG crop preview"
         />
+        <p className="export-resolution-note">
+          Cropped chart: {Math.round(exportPreview.bounds.width)} x{" "}
+          {Math.round(exportPreview.bounds.height)} px. Export size:{" "}
+          {Number.isFinite(parsedWidth) ? parsedWidth : "-"} x{" "}
+          {Number.isFinite(parsedHeight) ? parsedHeight : "-"} px.
+        </p>
         <div className="export-size-grid">
           <label className="inspector-field">
             <span>Width in pixels</span>
@@ -906,6 +925,12 @@ function PngExportDialog({ onCancel, onExport }: PngExportDialogProps) {
             />
           </label>
         </div>
+        {exceedsExportLimits ? (
+          <p className="export-resolution-error" role="alert">
+            Use dimensions up to {MAX_PNG_EXPORT_DIMENSION}px on each side and{" "}
+            {Math.floor(MAX_PNG_EXPORT_PIXELS / 1_000_000)} megapixels total.
+          </p>
+        ) : null}
         <div className="export-dialog-actions">
           <button type="button" onClick={onCancel}>
             Cancel
@@ -1362,6 +1387,33 @@ interface ExportPreview {
   aspectRatio: number;
 }
 
+function getDefaultPngExportDimensions(preview: ExportPreview): ExportDimensions {
+  return getScaledPngExportDimensions(preview.bounds, DEFAULT_PNG_EXPORT_SCALE);
+}
+
+function getScaledPngExportDimensions(
+  bounds: ExportBounds,
+  requestedScale: number,
+): ExportDimensions {
+  const sourceWidth = Math.max(Math.ceil(bounds.width), 1);
+  const sourceHeight = Math.max(Math.ceil(bounds.height), 1);
+  const sourcePixels = sourceWidth * sourceHeight;
+  const safeRequestedScale =
+    Number.isFinite(requestedScale) && requestedScale > 0 ? requestedScale : 1;
+  const maxScale = Math.min(
+    safeRequestedScale,
+    MAX_PNG_EXPORT_DIMENSION / sourceWidth,
+    MAX_PNG_EXPORT_DIMENSION / sourceHeight,
+    Math.sqrt(MAX_PNG_EXPORT_PIXELS / sourcePixels),
+  );
+  const scale = Math.max(maxScale, 1 / Math.max(sourceWidth, sourceHeight));
+
+  return {
+    width: Math.max(Math.round(sourceWidth * scale), 1),
+    height: Math.max(Math.round(sourceHeight * scale), 1),
+  };
+}
+
 function renderElementToPngDataUrl(
   element: HTMLElement,
   dimensions: ExportDimensions,
@@ -1380,6 +1432,8 @@ function renderElementToPngDataUrl(
 
   canvas.width = outputWidth;
   canvas.height = outputHeight;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
   context.clearRect(0, 0, outputWidth, outputHeight);
   context.save();
   context.setTransform(
