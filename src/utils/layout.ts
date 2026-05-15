@@ -31,6 +31,10 @@ export interface OrgChartLayout {
   height: number;
 }
 
+interface OrgChartLayoutOptions {
+  showJobTitles?: boolean;
+}
+
 const CARD_WIDTH = 220;
 const CARD_HEIGHT = 70;
 const VERTICAL_CARD_HEIGHT = 44;
@@ -49,17 +53,22 @@ const REPORT_LIST_ROW_VERTICAL_CHROME = 16;
 const REPORT_LIST_ROW_GAP = 8;
 const HORIZONTAL_GAP = 42;
 const VERTICAL_GAP = 78;
+const SIDE_BRANCH_GAP = 28;
+const SIDE_BRANCH_VERTICAL_GAP = 16;
 const CANVAS_PADDING = 48;
 const REPORT_LIST_TYPE_ORDER: Record<ReportTargetNode["type"], number> = {
   employee: 0,
-  open_role: 1,
-  approved_role: 2,
+  ebp: 1,
+  open_role: 2,
+  approved_role: 3,
 };
 
 export function calculateOrgChartLayout(
   chart: OrgChart,
   listViewOwnerIds = new Set<string>(),
+  options: OrgChartLayoutOptions = {},
 ): OrgChartLayout {
+  const showJobTitles = options.showJobTitles ?? true;
   const visualGraph = getVisualGraph(chart, listViewOwnerIds);
   const nodesById = new Map(visualGraph.nodes.map((node) => [node.id, node]));
   const visualNodeOrderById = new Map(
@@ -107,7 +116,7 @@ export function calculateOrgChartLayout(
           rowContentWidth,
           AVERAGE_PRIMARY_CHARACTER_WIDTH,
         );
-        const secondaryLines = displayText.secondary
+        const secondaryLines = showJobTitles && displayText.secondary
           ? estimateWrappedLineCount(
               displayText.secondary,
               rowContentWidth,
@@ -136,7 +145,7 @@ export function calculateOrgChartLayout(
       contentWidth,
       AVERAGE_PRIMARY_CHARACTER_WIDTH,
     );
-    const secondaryLines = displayText.secondary
+    const secondaryLines = showJobTitles && displayText.secondary
       ? estimateWrappedLineCount(
           displayText.secondary,
           contentWidth,
@@ -154,15 +163,34 @@ export function calculateOrgChartLayout(
     );
   };
 
-  const getChildren = (nodeId: string): VisualOrgNode[] =>
+  const getChildEntries = (
+    nodeId: string,
+  ): Array<{ connection: OrgConnection; node: VisualOrgNode }> =>
     (childConnectionsByNodeId.get(nodeId) ?? [])
-      .map((connection) => nodesById.get(connection.toNodeId))
-      .filter((node): node is VisualOrgNode => Boolean(node))
+      .map((connection) => {
+        const node = nodesById.get(connection.toNodeId);
+
+        return node ? { connection, node } : null;
+      })
+      .filter(
+        (entry): entry is { connection: OrgConnection; node: VisualOrgNode } =>
+          Boolean(entry),
+      )
       .sort(
-        (firstNode, secondNode) =>
-          (visualNodeOrderById.get(firstNode.id) ?? 0) -
-          (visualNodeOrderById.get(secondNode.id) ?? 0),
+        (firstEntry, secondEntry) =>
+          (visualNodeOrderById.get(firstEntry.node.id) ?? 0) -
+          (visualNodeOrderById.get(secondEntry.node.id) ?? 0),
       );
+
+  const getNormalChildren = (nodeId: string): VisualOrgNode[] =>
+    getChildEntries(nodeId)
+      .filter((entry) => !isSideBranchEntry(entry))
+      .map((entry) => entry.node);
+
+  const getSideBranchChildren = (nodeId: string): VisualOrgNode[] =>
+    getChildEntries(nodeId)
+      .filter(isSideBranchEntry)
+      .map((entry) => entry.node);
 
   const measureSubtree = (node: VisualOrgNode): number => {
     if (measuredWidths.has(node.id)) {
@@ -175,20 +203,30 @@ export function calculateOrgChartLayout(
 
     measuring.add(node.id);
 
-    const children = getChildren(node.id).filter(
+    const normalChildren = getNormalChildren(node.id).filter(
       (child) => !positionedNodes.has(child.id),
     );
+    const sideBranchChildren = getSideBranchChildren(node.id).filter(
+      (child) => !positionedNodes.has(child.id),
+    );
+    const sideBranchWidth = sideBranchChildren.reduce(
+      (width, child) => Math.max(width, measureSubtree(child)),
+      0,
+    );
+    const localGroupWidth =
+      getNodeWidth(node) +
+      (sideBranchWidth > 0 ? SIDE_BRANCH_GAP + sideBranchWidth : 0);
 
-    if (children.length === 0) {
+    if (normalChildren.length === 0) {
       measuring.delete(node.id);
-      measuredWidths.set(node.id, getNodeWidth(node));
-      return getNodeWidth(node);
+      measuredWidths.set(node.id, localGroupWidth);
+      return localGroupWidth;
     }
 
     const childrenWidth =
-      children.reduce((total, child) => total + measureSubtree(child), 0) +
-      HORIZONTAL_GAP * (children.length - 1);
-    const width = Math.max(getNodeWidth(node), childrenWidth);
+      normalChildren.reduce((total, child) => total + measureSubtree(child), 0) +
+      HORIZONTAL_GAP * (normalChildren.length - 1);
+    const width = Math.max(localGroupWidth, childrenWidth);
 
     measuring.delete(node.id);
     measuredWidths.set(node.id, width);
@@ -203,7 +241,16 @@ export function calculateOrgChartLayout(
     const subtreeWidth = measureSubtree(node);
     const nodeWidth = getNodeWidth(node);
     const nodeHeight = getNodeHeight(node);
-    const nodeX = left + (subtreeWidth - nodeWidth) / 2;
+    const sideBranchChildren = getSideBranchChildren(node.id).filter(
+      (child) => !positionedNodes.has(child.id),
+    );
+    const sideBranchWidth = sideBranchChildren.reduce(
+      (width, child) => Math.max(width, measureSubtree(child)),
+      0,
+    );
+    const localGroupWidth =
+      nodeWidth + (sideBranchWidth > 0 ? SIDE_BRANCH_GAP + sideBranchWidth : 0);
+    const nodeX = left + (subtreeWidth - localGroupWidth) / 2;
 
     positionedNodes.set(node.id, {
       node,
@@ -213,10 +260,22 @@ export function calculateOrgChartLayout(
       height: nodeHeight,
     });
 
+    let sideBranchY = y;
+    const sideBranchLeft = nodeX + nodeWidth + SIDE_BRANCH_GAP;
+
+    for (const sideBranchChild of sideBranchChildren) {
+      if (positionedNodes.has(sideBranchChild.id)) {
+        continue;
+      }
+
+      placeSubtree(sideBranchChild, sideBranchLeft, sideBranchY);
+      sideBranchY += getNodeHeight(sideBranchChild) + SIDE_BRANCH_VERTICAL_GAP;
+    }
+
     let childLeft = left;
     const childY = y + nodeHeight + VERTICAL_GAP;
 
-    for (const child of getChildren(node.id)) {
+    for (const child of getNormalChildren(node.id)) {
       if (positionedNodes.has(child.id)) {
         continue;
       }
@@ -451,9 +510,20 @@ function getNodesHiddenByReportLists(
 function isReportTargetNode(node: OrgNode | undefined): node is ReportTargetNode {
   return (
     node?.type === "employee" ||
+    node?.type === "ebp" ||
     node?.type === "open_role" ||
     node?.type === "approved_role"
   );
+}
+
+function isSideBranchEntry({
+  connection,
+  node,
+}: {
+  connection: OrgConnection;
+  node: VisualOrgNode;
+}): boolean {
+  return connection.connectionType === "reports_to" && node.type === "ebp";
 }
 
 function estimateWrappedLineCount(

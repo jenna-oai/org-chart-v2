@@ -1106,33 +1106,39 @@ function serializeEditorSnapshot(
 
 function parseImportedEditorSnapshot(fileContents: string): EditorSnapshot {
   const parsedSnapshot = JSON.parse(fileContents) as unknown;
+  const importedSnapshot = normalizeImportedEditorSnapshot(parsedSnapshot);
 
-  if (isOrgChart(parsedSnapshot)) {
-    return {
-      chart: parsedSnapshot,
-      selectedNodeId: null,
-      selectedTextBoxId: null,
-      listViewOwnerIds: new Set(),
-      textBoxes: [],
-    };
-  }
-
-  if (typeof parsedSnapshot !== "object" || parsedSnapshot === null) {
+  if (!importedSnapshot) {
     throw new Error("Invalid org chart JSON.");
   }
 
-  const persistedSnapshot = parsedSnapshot as Partial<PersistedEditorSnapshot>;
+  return importedSnapshot;
+}
 
-  if (
-    !("chart" in persistedSnapshot) ||
-    !persistedSnapshot.chart ||
-    !isOrgChart(persistedSnapshot.chart)
-  ) {
-    throw new Error("Invalid org chart JSON.");
+function normalizeImportedEditorSnapshot(value: unknown): EditorSnapshot | null {
+  const directChart = normalizeImportedChart(value);
+
+  if (directChart) {
+    return createEditorSnapshotFromChart(directChart);
+  }
+
+  if (!isObjectRecord(value)) {
+    return null;
+  }
+
+  const persistedSnapshot = value as Partial<PersistedEditorSnapshot>;
+  const chart =
+    normalizeImportedChart(persistedSnapshot.chart) ??
+    normalizeImportedChart(value.orgChart) ??
+    normalizeImportedChart(value.org_chart) ??
+    normalizeImportedChart(value.data);
+
+  if (!chart) {
+    return null;
   }
 
   return {
-    chart: persistedSnapshot.chart,
+    chart,
     selectedNodeId:
       typeof persistedSnapshot.selectedNodeId === "string"
         ? persistedSnapshot.selectedNodeId
@@ -1155,6 +1161,45 @@ function parseImportedEditorSnapshot(fileContents: string): EditorSnapshot {
   };
 }
 
+function createEditorSnapshotFromChart(chart: OrgChart): EditorSnapshot {
+  return {
+    chart,
+    selectedNodeId: null,
+    selectedTextBoxId: null,
+    listViewOwnerIds: new Set(),
+    textBoxes: [],
+  };
+}
+
+function normalizeImportedChart(value: unknown): OrgChart | null {
+  if (!isObjectRecord(value)) {
+    return null;
+  }
+
+  const nodes = value.nodes;
+  const connections = value.connections ?? value.edges;
+
+  if (!Array.isArray(nodes) || !Array.isArray(connections)) {
+    return null;
+  }
+
+  const chart: OrgChart = {
+    ...value,
+    id:
+      typeof value.id === "string" && value.id.trim()
+        ? value.id
+        : `chart-${Date.now()}`,
+    name:
+      typeof value.name === "string" && value.name.trim()
+        ? value.name
+        : "Imported Org Chart",
+    nodes,
+    connections,
+  };
+
+  return isOrgChart(chart) ? chart : null;
+}
+
 function isOrgChart(value: unknown): value is OrgChart {
   return (
     typeof value === "object" &&
@@ -1166,6 +1211,10 @@ function isOrgChart(value: unknown): value is OrgChart {
     Array.isArray((value as OrgChart).nodes) &&
     Array.isArray((value as OrgChart).connections)
   );
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function isCanvasTextBox(value: unknown): value is CanvasTextBox {
@@ -2070,6 +2119,7 @@ function getConnectionsValidForNodes(
 function isReportTargetType(node: OrgNode): boolean {
   return (
     node.type === "employee" ||
+    node.type === "ebp" ||
     node.type === "open_role" ||
     node.type === "approved_role"
   );
@@ -2194,6 +2244,7 @@ function inferConnectionType(
   if (
     parentNode.type === "vertical" &&
     (childNode.type === "employee" ||
+      childNode.type === "ebp" ||
       childNode.type === "open_role" ||
       childNode.type === "approved_role")
   ) {
@@ -2214,6 +2265,16 @@ function createNewNode(nodeType: OrgNodeType, chart: OrgChart): OrgNode {
       uplineConnectionStyle: "solid",
       name: `New Employee ${nodeNumber}`,
       jobTitle: "Job title",
+    };
+  }
+
+  if (nodeType === "ebp") {
+    return {
+      id,
+      type: "ebp",
+      uplineConnectionStyle: "solid",
+      name: `New EBP ${nodeNumber}`,
+      jobTitle: "Executive Business Partner",
     };
   }
 
@@ -2268,7 +2329,11 @@ function createPlacementConnections(
     ];
   }
 
-  if (selectedNode.type === "open_role" || selectedNode.type === "approved_role") {
+  if (
+    selectedNode.type === "ebp" ||
+    selectedNode.type === "open_role" ||
+    selectedNode.type === "approved_role"
+  ) {
     const connectionType =
       newNode.type === "vertical" ? "owns_vertical" : "reports_to";
 
@@ -2300,7 +2365,11 @@ function createPlacementConnections(
       ? chart.nodes.find((node) => node.id === verticalOwnerConnection.fromNodeId)
       : null;
 
-    if (newNode.type === "employee" && verticalOwnerNode?.type === "employee") {
+    if (
+      verticalOwnerNode &&
+      isReportTargetType(newNode) &&
+      isReportTargetType(verticalOwnerNode)
+    ) {
       placementConnections.push({
         id: `reports-to-${verticalOwnerNode.id}-${newNode.id}`,
         fromNodeId: verticalOwnerNode.id,

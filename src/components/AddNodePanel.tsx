@@ -11,6 +11,7 @@ interface AddNodePanelProps {
 
 const addNodeOptions: Array<{ label: string; value: AddMenuItemType }> = [
   { label: "Employee", value: "employee" },
+  { label: "EBP", value: "ebp" },
   { label: "Vertical", value: "vertical" },
   { label: "Open role", value: "open_role" },
   { label: "Approved role", value: "approved_role" },

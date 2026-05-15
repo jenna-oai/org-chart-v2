@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import type {
   ApprovedRoleNode,
   CanvasTextBox,
+  EbpNode,
   EmployeeNode,
   OpenRoleNode,
   OrgChart,
@@ -48,6 +49,7 @@ interface NodeInspectorProps {
 
 const nodeTypeLabels: Record<OrgNode["type"], string> = {
   employee: "Employee",
+  ebp: "EBP",
   vertical: "Vertical",
   open_role: "Open role",
   approved_role: "Approved role",
@@ -58,6 +60,7 @@ const nodeTypeOptions: Array<{
   value: OrgNodeType;
 }> = [
   { label: "Employee", value: "employee" },
+  { label: "EBP", value: "ebp" },
   { label: "Vertical", value: "vertical" },
   { label: "Open role", value: "open_role" },
   { label: "Approved role", value: "approved_role" },
@@ -138,6 +141,14 @@ export function NodeInspector({
         <NodeTypeField node={node} onChange={onChange} />
         {node.type === "employee" ? (
           <EmployeeFields
+            autoFocus={autoFocusNodeId === node.id}
+            node={node}
+            onAutoFocusHandled={onAutoFocusHandled}
+            onChange={onChange}
+          />
+        ) : null}
+        {node.type === "ebp" ? (
+          <EbpFields
             autoFocus={autoFocusNodeId === node.id}
             node={node}
             onAutoFocusHandled={onAutoFocusHandled}
@@ -309,6 +320,15 @@ function convertNodeToType(node: OrgNode, targetType: OrgNodeType): OrgNode {
     };
   }
 
+  if (targetType === "ebp") {
+    return {
+      ...sharedFields,
+      type: "ebp",
+      name: primaryCopy,
+      jobTitle: roleCopy || "Executive Business Partner",
+    };
+  }
+
   if (targetType === "vertical") {
     return {
       ...sharedFields,
@@ -337,7 +357,7 @@ function convertNodeToType(node: OrgNode, targetType: OrgNodeType): OrgNode {
 }
 
 function getRoleCopy(node: OrgNode): string {
-  if (node.type === "employee") {
+  if (node.type === "employee" || node.type === "ebp") {
     return node.jobTitle;
   }
 
@@ -388,6 +408,37 @@ function EmployeeFields({
   onAutoFocusHandled,
   onChange,
 }: EmployeeFieldsProps) {
+  return (
+    <>
+      <InspectorInput
+        autoFocus={autoFocus}
+        label="Name"
+        value={node.name}
+        onAutoFocusHandled={onAutoFocusHandled}
+        onChange={(name) => onChange({ ...node, name })}
+      />
+      <InspectorInput
+        label="Job title"
+        value={node.jobTitle}
+        onChange={(jobTitle) => onChange({ ...node, jobTitle })}
+      />
+    </>
+  );
+}
+
+interface EbpFieldsProps {
+  autoFocus: boolean;
+  node: EbpNode;
+  onAutoFocusHandled: () => void;
+  onChange: (node: OrgNode) => void;
+}
+
+function EbpFields({
+  autoFocus,
+  node,
+  onAutoFocusHandled,
+  onChange,
+}: EbpFieldsProps) {
   return (
     <>
       <InspectorInput
@@ -791,7 +842,7 @@ function RelationshipSummary({
   node,
   onToggleListView,
 }: RelationshipSummaryProps) {
-  if (node.type === "employee") {
+  if (node.type === "employee" || node.type === "ebp") {
     return (
       <>
         <ListViewRelationshipSection
@@ -946,6 +997,10 @@ function getManagerOptionLabel(manager: ReportTargetNode): string {
 
   if (manager.type === "approved_role") {
     return `[Approved] ${manager.roleTitle}`;
+  }
+
+  if (manager.type === "ebp") {
+    return `[EBP] ${manager.name}`;
   }
 
   return manager.name;

@@ -3,6 +3,7 @@ import type { NodeDisplayText, OrgNode } from "../types/orgChart";
 export function getNodeDisplayText(node: OrgNode): NodeDisplayText {
   switch (node.type) {
     case "employee":
+    case "ebp":
       return {
         primary: node.name,
         secondary: node.jobTitle,

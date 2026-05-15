@@ -400,6 +400,11 @@ select {
   background: #ffffff;
 }
 
+.org-node-card--ebp {
+  border-color: #000000;
+  background: #edf7f1;
+}
+
 .org-node-card--vertical {
   padding: 5px 16px;
   border-color: #000000;
@@ -822,6 +827,10 @@ select {
 
 .inspector-type-dot--employee {
   background: #3574b7;
+}
+
+.inspector-type-dot--ebp {
+  background: #2f855a;
 }
 
 .inspector-type-dot--vertical {

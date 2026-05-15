@@ -83,7 +83,7 @@ function validateConnectionShape(
       issues.push({
         code: "invalid_owns_vertical_connection",
         message:
-          "owns_vertical connections must go from employee, open_role, or approved_role to vertical.",
+          "owns_vertical connections must go from employee, EBP, open_role, or approved_role to vertical.",
         connectionId: connection.id,
       });
     }
@@ -96,7 +96,7 @@ function validateConnectionShape(
       issues.push({
         code: "invalid_belongs_to_vertical_connection",
         message:
-          "belongs_to_vertical connections must go from vertical to employee, open_role, or approved_role.",
+          "belongs_to_vertical connections must go from vertical to employee, EBP, open_role, or approved_role.",
         connectionId: connection.id,
       });
     }
@@ -109,7 +109,7 @@ function validateConnectionShape(
       issues.push({
         code: "invalid_reports_to_connection",
         message:
-          "reports_to connections must go from employee, open_role, or approved_role to employee, open_role, or approved_role. Use owns_vertical for vertical ownership.",
+          "reports_to connections must go from employee, EBP, open_role, or approved_role to employee, EBP, open_role, or approved_role. Use owns_vertical for vertical ownership.",
         connectionId: connection.id,
       });
     }

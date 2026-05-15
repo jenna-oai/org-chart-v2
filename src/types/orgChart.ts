@@ -1,5 +1,6 @@
 export type OrgNodeType =
   | "employee"
+  | "ebp"
   | "vertical"
   | "open_role"
   | "approved_role";
@@ -58,6 +59,12 @@ export interface EmployeeNode extends OrgNodeBase {
   jobTitle: string;
 }
 
+export interface EbpNode extends OrgNodeBase {
+  type: "ebp";
+  name: string;
+  jobTitle: string;
+}
+
 export interface VerticalNode extends OrgNodeBase {
   type: "vertical";
   verticalName: string;
@@ -77,6 +84,7 @@ export interface ApprovedRoleNode extends OrgNodeBase {
 
 export type OrgNode =
   | EmployeeNode
+  | EbpNode
   | VerticalNode
   | OpenRoleNode
   | ApprovedRoleNode;
@@ -96,7 +104,11 @@ export interface NodeDisplayText {
   secondary: string | null;
 }
 
-export type ReportTargetNode = EmployeeNode | OpenRoleNode | ApprovedRoleNode;
+export type ReportTargetNode =
+  | EmployeeNode
+  | EbpNode
+  | OpenRoleNode
+  | ApprovedRoleNode;
 
 export interface OrgChartValidationIssue {
   code: string;

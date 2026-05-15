@@ -102,6 +102,7 @@ export function isReportTargetNode(
 ): node is ReportTargetNode {
   return (
     node?.type === "employee" ||
+    node?.type === "ebp" ||
     node?.type === "open_role" ||
     node?.type === "approved_role"
   );

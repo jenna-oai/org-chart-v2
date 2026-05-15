@@ -39,13 +39,14 @@ const DEFAULT_CANVAS_ZOOM = 1;
 const CANVAS_ZOOM_STEP = 0.05;
 type CanvasFilterNodeType = Extract<
   OrgNodeType,
-  "employee" | "open_role" | "approved_role"
+  "employee" | "ebp" | "open_role" | "approved_role"
 >;
 const filterNodeTypes: Array<{
   label: string;
   value: CanvasFilterNodeType;
 }> = [
   { label: "Employee", value: "employee" },
+  { label: "EBP", value: "ebp" },
   { label: "Open Role", value: "open_role" },
   { label: "Approved Role", value: "approved_role" },
 ];
@@ -88,6 +89,7 @@ export function OrgChartCanvas({
   const [visibleNodeTypes, setVisibleNodeTypes] = useState<
     Set<CanvasFilterNodeType>
   >(() => new Set(filterNodeTypes.map((option) => option.value)));
+  const [showJobTitles, setShowJobTitles] = useState(true);
   const [connectionDrag, setConnectionDrag] = useState<ConnectionDragState | null>(
     null,
   );
@@ -99,8 +101,11 @@ export function OrgChartCanvas({
     [chart, visibleNodeTypes],
   );
   const layout = useMemo(
-    () => calculateOrgChartLayout(filteredChart, listViewOwnerIds),
-    [filteredChart, listViewOwnerIds],
+    () =>
+      calculateOrgChartLayout(filteredChart, listViewOwnerIds, {
+        showJobTitles,
+      }),
+    [filteredChart, listViewOwnerIds, showJobTitles],
   );
   const canvasWidth = Math.max(
     layout.width,
@@ -414,6 +419,7 @@ export function OrgChartCanvas({
                     zoom,
                   )}
                   isOrderDragging={nodeOrderDrag?.nodeId === layoutNode.node.id}
+                  showJobTitles={showJobTitles}
                   onBeginConnectionDrag={startConnectionDrag}
                   onBeginNodeOrderDrag={startNodeOrderDrag}
                   onChangeNode={onChangeNode}
@@ -465,6 +471,14 @@ export function OrgChartCanvas({
                 <span>{option.label}</span>
               </label>
             ))}
+            <label>
+              <input
+                checked={showJobTitles}
+                type="checkbox"
+                onChange={(event) => setShowJobTitles(event.target.checked)}
+              />
+              <span>Show job titles</span>
+            </label>
           </fieldset>
         </details>
         <div
@@ -813,6 +827,7 @@ function isStructuralCanvasConnection(connection: OrgConnection): boolean {
 function isReportTargetNode(node: OrgNode): boolean {
   return (
     node.type === "employee" ||
+    node.type === "ebp" ||
     node.type === "open_role" ||
     node.type === "approved_role"
   );

@@ -19,6 +19,13 @@ export const sampleChart: OrgChart = {
       jobTitle: "Director, Business Finance",
     },
     {
+      id: "erin-kim",
+      type: "ebp",
+      uplineConnectionStyle: "solid",
+      name: "Erin Kim",
+      jobTitle: "Executive Business Partner",
+    },
+    {
       id: "sam-patel",
       type: "employee",
       uplineConnectionStyle: "solid",
@@ -84,6 +91,12 @@ export const sampleChart: OrgChart = {
       id: "maya-to-daniel",
       fromNodeId: "maya-chen",
       toNodeId: "daniel-brooks",
+      connectionType: "reports_to",
+    },
+    {
+      id: "maya-to-erin",
+      fromNodeId: "maya-chen",
+      toNodeId: "erin-kim",
       connectionType: "reports_to",
     },
     {

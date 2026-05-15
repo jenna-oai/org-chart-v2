@@ -14,6 +14,7 @@ interface OrgNodeCardProps {
   isSelected: boolean;
   isOrderDragging: boolean;
   orderDragOffsetX: number;
+  showJobTitles: boolean;
   onBeginConnectionDrag: (
     layoutNode: LayoutNode,
     handlePosition: ConnectionHandlePosition,
@@ -34,6 +35,7 @@ export function OrgNodeCard({
   isSelected,
   isOrderDragging,
   orderDragOffsetX,
+  showJobTitles,
   onBeginConnectionDrag,
   onBeginNodeOrderDrag,
   onChangeNode,
@@ -130,7 +132,7 @@ export function OrgNodeCard({
                 className={`report-list-node-item report-list-node-item--${report.type}`}
               >
                 <span>{reportDisplayText.primary}</span>
-                {reportDisplayText.secondary ? (
+                {showJobTitles && reportDisplayText.secondary ? (
                   <small>{reportDisplayText.secondary}</small>
                 ) : null}
               </li>
@@ -142,6 +144,7 @@ export function OrgNodeCard({
           <NodeEditableFields
             isSelected={isSelected}
             node={layoutNode.node}
+            showJobTitles={showJobTitles}
             onChangeNode={onChangeNode}
           />
         )
@@ -153,15 +156,17 @@ export function OrgNodeCard({
 interface NodeEditableFieldsProps {
   isSelected: boolean;
   node: OrgNode;
+  showJobTitles: boolean;
   onChangeNode: (node: OrgNode) => void;
 }
 
 function NodeEditableFields({
   isSelected,
   node,
+  showJobTitles,
   onChangeNode,
 }: NodeEditableFieldsProps) {
-  if (node.type === "employee") {
+  if (node.type === "employee" || node.type === "ebp") {
     return (
       <>
         <EditableNodeField
@@ -171,13 +176,15 @@ function NodeEditableFields({
           value={node.name}
           onChange={(name) => onChangeNode({ ...node, name })}
         />
-        <EditableNodeField
-          className="node-secondary"
-          isEditable={isSelected}
-          label="Job title"
-          value={node.jobTitle}
-          onChange={(jobTitle) => onChangeNode({ ...node, jobTitle })}
-        />
+        {showJobTitles ? (
+          <EditableNodeField
+            className="node-secondary"
+            isEditable={isSelected}
+            label="Job title"
+            value={node.jobTitle}
+            onChange={(jobTitle) => onChangeNode({ ...node, jobTitle })}
+          />
+        ) : null}
       </>
     );
   }
@@ -203,13 +210,15 @@ function NodeEditableFields({
         value={node.statusLabel}
         onChange={(statusLabel) => onChangeNode({ ...node, statusLabel })}
       />
-      <EditableNodeField
-        className="node-secondary"
-        isEditable={isSelected}
-        label="Role title"
-        value={node.roleTitle}
-        onChange={(roleTitle) => onChangeNode({ ...node, roleTitle })}
-      />
+      {showJobTitles ? (
+        <EditableNodeField
+          className="node-secondary"
+          isEditable={isSelected}
+          label="Role title"
+          value={node.roleTitle}
+          onChange={(roleTitle) => onChangeNode({ ...node, roleTitle })}
+        />
+      ) : null}
     </>
   );
 }
