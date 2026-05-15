@@ -28,6 +28,7 @@ interface EditorSnapshot {
   selectedNodeId: string | null;
   selectedTextBoxId: string | null;
   listViewOwnerIds: Set<string>;
+  listViewReportOrders: Record<string, string[]>;
   textBoxes: CanvasTextBox[];
 }
 
@@ -37,6 +38,7 @@ interface PersistedEditorSnapshot {
   selectedNodeId: string | null;
   selectedTextBoxId: string | null;
   listViewOwnerIds: string[];
+  listViewReportOrders?: Record<string, string[]>;
   textBoxes: CanvasTextBox[];
 }
 
@@ -88,8 +90,14 @@ export function App() {
   const [isPngExportDialogOpen, setIsPngExportDialogOpen] = useState(false);
   const [jsonExportPayload, setJsonExportPayload] =
     useState<JsonExportPayload | null>(null);
-  const { chart, listViewOwnerIds, selectedNodeId, selectedTextBoxId, textBoxes } =
-    editorState;
+  const {
+    chart,
+    listViewOwnerIds,
+    listViewReportOrders,
+    selectedNodeId,
+    selectedTextBoxId,
+    textBoxes,
+  } = editorState;
   const validation = validateOrgChart(chart);
   const selectedNode = useMemo(
     () => chart.nodes.find((node) => node.id === selectedNodeId) ?? null,
@@ -382,6 +390,34 @@ export function App() {
     });
   };
 
+  const reorderReportList = (
+    ownerNodeId: string,
+    orderedReportNodeIds: string[],
+  ) => {
+    if (orderedReportNodeIds.length < 2) {
+      return;
+    }
+
+    commitEditorState((currentState) => {
+      const currentOrder = currentState.listViewReportOrders[ownerNodeId] ?? [];
+
+      if (
+        currentOrder.length === orderedReportNodeIds.length &&
+        currentOrder.every((nodeId, index) => nodeId === orderedReportNodeIds[index])
+      ) {
+        return currentState;
+      }
+
+      return {
+        ...currentState,
+        listViewReportOrders: {
+          ...currentState.listViewReportOrders,
+          [ownerNodeId]: orderedReportNodeIds,
+        },
+      };
+    });
+  };
+
   const undo = () => {
     const previousState = undoStack[undoStack.length - 1];
 
@@ -578,6 +614,7 @@ export function App() {
           <OrgChartCanvas
             chart={chart}
             listViewOwnerIds={listViewOwnerIds}
+            listViewReportOrders={listViewReportOrders}
             selectedNodeId={selectedNodeId}
             selectedTextBoxId={selectedTextBoxId}
             textBoxes={textBoxes}
@@ -585,6 +622,7 @@ export function App() {
             onChangeNode={updateNode}
             onChangeTextBox={updateTextBox}
             onReorderNodes={reorderNodes}
+            onReorderReportList={reorderReportList}
             onSelectNode={(nodeId) => {
               setIsChartTitleSelected(false);
               setEditorState((currentState) => ({
@@ -1029,6 +1067,7 @@ function cloneEditorSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
     selectedNodeId: snapshot.selectedNodeId,
     selectedTextBoxId: snapshot.selectedTextBoxId,
     listViewOwnerIds: new Set(snapshot.listViewOwnerIds),
+    listViewReportOrders: cloneListViewReportOrders(snapshot.listViewReportOrders),
     textBoxes: snapshot.textBoxes,
   };
 }
@@ -1044,6 +1083,7 @@ function createBlankEditorSnapshot(): EditorSnapshot {
     selectedNodeId: null,
     selectedTextBoxId: null,
     listViewOwnerIds: new Set(),
+    listViewReportOrders: {},
     textBoxes: [],
   };
 }
@@ -1090,6 +1130,9 @@ function loadEditorSnapshot(): EditorSnapshot {
             )
           : [],
       ),
+      listViewReportOrders: normalizeListViewReportOrders(
+        parsedSnapshot.listViewReportOrders,
+      ),
       textBoxes: Array.isArray(parsedSnapshot.textBoxes)
         ? parsedSnapshot.textBoxes
         : [],
@@ -1125,8 +1168,47 @@ function serializeEditorSnapshot(
     selectedNodeId: snapshot.selectedNodeId,
     selectedTextBoxId: snapshot.selectedTextBoxId,
     listViewOwnerIds: Array.from(snapshot.listViewOwnerIds),
+    listViewReportOrders: cloneListViewReportOrders(snapshot.listViewReportOrders),
     textBoxes: snapshot.textBoxes,
   };
+}
+
+function cloneListViewReportOrders(
+  reportOrders: Record<string, string[]>,
+): Record<string, string[]> {
+  return Object.fromEntries(
+    Object.entries(reportOrders).map(([ownerNodeId, reportNodeIds]) => [
+      ownerNodeId,
+      [...reportNodeIds],
+    ]),
+  );
+}
+
+function normalizeListViewReportOrders(value: unknown): Record<string, string[]> {
+  if (!isObjectRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([ownerNodeId, reportNodeIds]) => {
+        if (!Array.isArray(reportNodeIds)) {
+          return null;
+        }
+
+        return [
+          ownerNodeId,
+          reportNodeIds.filter(
+            (reportNodeId): reportNodeId is string =>
+              typeof reportNodeId === "string",
+          ),
+        ] as const;
+      })
+      .filter(
+        (entry): entry is readonly [string, string[]] =>
+          entry !== null && entry[1].length > 0,
+      ),
+  );
 }
 
 function parseImportedEditorSnapshot(fileContents: string): EditorSnapshot {
@@ -1180,6 +1262,9 @@ function normalizeImportedEditorSnapshot(value: unknown): EditorSnapshot | null 
           )
         : [],
     ),
+    listViewReportOrders: normalizeListViewReportOrders(
+      persistedSnapshot.listViewReportOrders,
+    ),
     textBoxes: Array.isArray(persistedSnapshot.textBoxes)
       ? persistedSnapshot.textBoxes.filter(isCanvasTextBox)
       : [],
@@ -1192,6 +1277,7 @@ function createEditorSnapshotFromChart(chart: OrgChart): EditorSnapshot {
     selectedNodeId: null,
     selectedTextBoxId: null,
     listViewOwnerIds: new Set(),
+    listViewReportOrders: {},
     textBoxes: [],
   };
 }

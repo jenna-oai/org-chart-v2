@@ -14,6 +14,11 @@ interface OrgNodeCardProps {
   isSelected: boolean;
   isOrderDragging: boolean;
   orderDragOffsetX: number;
+  reportListOrderDrag: {
+    ownerNodeId: string;
+    reportNodeId: string;
+    offsetY: number;
+  } | null;
   showJobTitles: boolean;
   onBeginConnectionDrag: (
     layoutNode: LayoutNode,
@@ -26,6 +31,12 @@ interface OrgNodeCardProps {
     pointerId: number,
     clientX: number,
   ) => void;
+  onBeginReportListOrderDrag: (
+    ownerNodeId: string,
+    reportNodeId: string,
+    pointerId: number,
+    clientY: number,
+  ) => void;
   onChangeNode: (node: OrgNode) => void;
   onSelect: (nodeId: string) => void;
 }
@@ -35,9 +46,11 @@ export function OrgNodeCard({
   isSelected,
   isOrderDragging,
   orderDragOffsetX,
+  reportListOrderDrag,
   showJobTitles,
   onBeginConnectionDrag,
   onBeginNodeOrderDrag,
+  onBeginReportListOrderDrag,
   onChangeNode,
   onSelect,
 }: OrgNodeCardProps) {
@@ -53,6 +66,10 @@ export function OrgNodeCard({
     layoutNode.node.type === "report_list"
       ? undefined
       : layoutNode.node.backgroundColor;
+  const reportListNode =
+    layoutNode.node.type === "report_list" ? layoutNode.node : null;
+  const editableNode =
+    layoutNode.node.type === "report_list" ? null : layoutNode.node;
 
   return (
     <div
@@ -121,15 +138,42 @@ export function OrgNodeCard({
           />
         </>
       ) : null}
-      {layoutNode.node.type === "report_list" ? (
+      {reportListNode ? (
         <ul className="report-list-node-items">
-          {layoutNode.node.reports.map((report) => {
+          {reportListNode.reports.map((report) => {
             const reportDisplayText = getNodeDisplayText(report);
+            const isReportListOrderDragging =
+              reportListOrderDrag?.ownerNodeId === reportListNode.ownerNodeId &&
+              reportListOrderDrag.reportNodeId === report.id;
 
             return (
               <li
                 key={report.id}
-                className={`report-list-node-item report-list-node-item--${report.type}`}
+                className={`report-list-node-item report-list-node-item--${report.type} ${
+                  isReportListOrderDragging
+                    ? "report-list-node-item--order-dragging"
+                    : ""
+                }`}
+                data-report-list-owner-id={reportListNode.ownerNodeId}
+                data-report-node-id={report.id}
+                style={{
+                  transform: isReportListOrderDragging
+                    ? `translateY(${reportListOrderDrag?.offsetY ?? 0}px)`
+                    : undefined,
+                }}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) {
+                    return;
+                  }
+
+                  event.stopPropagation();
+                  onBeginReportListOrderDrag(
+                    reportListNode.ownerNodeId,
+                    report.id,
+                    event.pointerId,
+                    event.clientY,
+                  );
+                }}
               >
                 <span>{reportDisplayText.primary}</span>
                 {showJobTitles && reportDisplayText.secondary ? (
@@ -140,10 +184,11 @@ export function OrgNodeCard({
           })}
         </ul>
       ) : (
-        displayText && (
+        displayText &&
+        editableNode && (
           <NodeEditableFields
             isSelected={isSelected}
-            node={layoutNode.node}
+            node={editableNode}
             showJobTitles={showJobTitles}
             onChangeNode={onChangeNode}
           />

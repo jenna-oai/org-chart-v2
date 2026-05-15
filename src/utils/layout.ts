@@ -32,6 +32,7 @@ export interface OrgChartLayout {
 }
 
 interface OrgChartLayoutOptions {
+  listViewReportOrders?: Record<string, string[]>;
   showJobTitles?: boolean;
 }
 
@@ -69,7 +70,11 @@ export function calculateOrgChartLayout(
   options: OrgChartLayoutOptions = {},
 ): OrgChartLayout {
   const showJobTitles = options.showJobTitles ?? true;
-  const visualGraph = getVisualGraph(chart, listViewOwnerIds);
+  const visualGraph = getVisualGraph(
+    chart,
+    listViewOwnerIds,
+    options.listViewReportOrders ?? {},
+  );
   const nodesById = new Map(visualGraph.nodes.map((node) => [node.id, node]));
   const visualNodeOrderById = new Map(
     visualGraph.nodes.map((node, index) => [node.id, index]),
@@ -320,9 +325,14 @@ export function calculateOrgChartLayout(
 export function getVisualGraph(
   chart: OrgChart,
   listViewOwnerIds = new Set<string>(),
+  listViewReportOrders: Record<string, string[]> = {},
 ): { nodes: VisualOrgNode[]; connections: OrgConnection[] } {
   const hiddenNodeIds = getNodesHiddenByReportLists(chart, listViewOwnerIds);
-  const reportListNodes = getReportListNodes(chart, listViewOwnerIds);
+  const reportListNodes = getReportListNodes(
+    chart,
+    listViewOwnerIds,
+    listViewReportOrders,
+  );
   const visibleChartNodes = chart.nodes.filter((node) => !hiddenNodeIds.has(node.id));
   const visualConnections = getVisualConnections(chart.connections).filter(
     (connection) =>
@@ -422,10 +432,15 @@ function hasManagerInSameVertical(
 function getReportListNodes(
   chart: OrgChart,
   listViewOwnerIds: Set<string>,
+  listViewReportOrders: Record<string, string[]>,
 ): ReportListNode[] {
   return Array.from(listViewOwnerIds)
     .map((ownerNodeId) => {
-      const reports = getListOccupantNodes(ownerNodeId, chart);
+      const reports = getListOccupantNodes(
+        ownerNodeId,
+        chart,
+        listViewReportOrders[ownerNodeId],
+      );
 
       if (reports.length === 0) {
         return null;
@@ -444,20 +459,43 @@ function getReportListNodes(
 function getListOccupantNodes(
   ownerNodeId: string,
   chart: OrgChart,
+  orderedNodeIds?: string[],
 ): ReportTargetNode[] {
   const ownerNode = chart.nodes.find((node) => node.id === ownerNodeId);
+  const occupantNodes =
+    ownerNode?.type === "vertical"
+      ? getContainedVerticalNodes(ownerNodeId, chart)
+      : getDirectReportNodes(ownerNodeId, chart);
 
-  if (ownerNode?.type === "vertical") {
-    return sortReportListOccupants(getContainedVerticalNodes(ownerNodeId, chart));
-  }
-
-  return sortReportListOccupants(getDirectReportNodes(ownerNodeId, chart));
+  return sortReportListOccupants(occupantNodes, orderedNodeIds);
 }
 
-function sortReportListOccupants(nodes: ReportTargetNode[]): ReportTargetNode[] {
+function sortReportListOccupants(
+  nodes: ReportTargetNode[],
+  orderedNodeIds?: string[],
+): ReportTargetNode[] {
+  const orderedNodeIndexById = new Map(
+    (orderedNodeIds ?? []).map((nodeId, index) => [nodeId, index]),
+  );
+
   return nodes
     .map((node, index) => ({ node, index }))
     .sort((first, second) => {
+      const firstOrderedIndex = orderedNodeIndexById.get(first.node.id);
+      const secondOrderedIndex = orderedNodeIndexById.get(second.node.id);
+
+      if (firstOrderedIndex !== undefined || secondOrderedIndex !== undefined) {
+        if (firstOrderedIndex === undefined) {
+          return 1;
+        }
+
+        if (secondOrderedIndex === undefined) {
+          return -1;
+        }
+
+        return firstOrderedIndex - secondOrderedIndex;
+      }
+
       const typeDifference =
         REPORT_LIST_TYPE_ORDER[first.node.type] -
         REPORT_LIST_TYPE_ORDER[second.node.type];

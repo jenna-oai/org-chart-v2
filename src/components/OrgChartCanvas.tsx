@@ -33,6 +33,21 @@ interface NodeOrderDragState {
   hasMoved: boolean;
 }
 
+interface ReportListRowMeasurement {
+  nodeId: string;
+  centerY: number;
+}
+
+interface ReportListOrderDragState {
+  ownerNodeId: string;
+  reportNodeId: string;
+  pointerId: number;
+  startClientY: number;
+  currentClientY: number;
+  hasMoved: boolean;
+  rowMeasurements: ReportListRowMeasurement[];
+}
+
 const MIN_CANVAS_ZOOM = 0.5;
 const MAX_CANVAS_ZOOM = 1.5;
 const DEFAULT_CANVAS_ZOOM = 1;
@@ -54,6 +69,7 @@ const filterNodeTypes: Array<{
 interface OrgChartCanvasProps {
   chart: OrgChart;
   listViewOwnerIds: Set<string>;
+  listViewReportOrders: Record<string, string[]>;
   selectedNodeId: string | null;
   selectedTextBoxId: string | null;
   textBoxes: CanvasTextBoxModel[];
@@ -66,6 +82,10 @@ interface OrgChartCanvasProps {
   onChangeNode: (node: OrgNode) => void;
   onChangeTextBox: (textBox: CanvasTextBoxModel) => void;
   onReorderNodes: (orderedNodeIds: string[]) => void;
+  onReorderReportList: (
+    ownerNodeId: string,
+    orderedReportNodeIds: string[],
+  ) => void;
   onSelectNode: (nodeId: string) => void;
   onSelectTextBox: (textBoxId: string) => void;
 }
@@ -73,6 +93,7 @@ interface OrgChartCanvasProps {
 export function OrgChartCanvas({
   chart,
   listViewOwnerIds,
+  listViewReportOrders,
   selectedNodeId,
   selectedTextBoxId,
   textBoxes,
@@ -80,6 +101,7 @@ export function OrgChartCanvas({
   onChangeNode,
   onChangeTextBox,
   onReorderNodes,
+  onReorderReportList,
   onSelectNode,
   onSelectTextBox,
 }: OrgChartCanvasProps) {
@@ -96,6 +118,8 @@ export function OrgChartCanvas({
   const [nodeOrderDrag, setNodeOrderDrag] = useState<NodeOrderDragState | null>(
     null,
   );
+  const [reportListOrderDrag, setReportListOrderDrag] =
+    useState<ReportListOrderDragState | null>(null);
   const filteredChart = useMemo(
     () => getFilteredChart(chart, visibleNodeTypes),
     [chart, visibleNodeTypes],
@@ -103,9 +127,10 @@ export function OrgChartCanvas({
   const layout = useMemo(
     () =>
       calculateOrgChartLayout(filteredChart, listViewOwnerIds, {
+        listViewReportOrders,
         showJobTitles,
       }),
-    [filteredChart, listViewOwnerIds, showJobTitles],
+    [filteredChart, listViewOwnerIds, listViewReportOrders, showJobTitles],
   );
   const canvasWidth = Math.max(
     layout.width,
@@ -225,6 +250,65 @@ export function OrgChartCanvas({
   }, [layout, nodeOrderDrag, onReorderNodes, zoom]);
 
   useEffect(() => {
+    if (!reportListOrderDrag) {
+      return;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== reportListOrderDrag.pointerId) {
+        return;
+      }
+
+      setReportListOrderDrag((currentDrag) => {
+        if (!currentDrag) {
+          return null;
+        }
+
+        const deltaY = (event.clientY - currentDrag.startClientY) / zoom;
+
+        return {
+          ...currentDrag,
+          currentClientY: event.clientY,
+          hasMoved: currentDrag.hasMoved || Math.abs(deltaY) > 6,
+        };
+      });
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== reportListOrderDrag.pointerId) {
+        return;
+      }
+
+      const completedDrag = {
+        ...reportListOrderDrag,
+        currentClientY: event.clientY,
+        hasMoved:
+          reportListOrderDrag.hasMoved ||
+          Math.abs(
+            (event.clientY - reportListOrderDrag.startClientY) / zoom,
+          ) > 6,
+      };
+      const orderedReportNodeIds = completedDrag.hasMoved
+        ? getOrderedReportNodeIdsAfterVerticalDrag(completedDrag, zoom)
+        : null;
+
+      setReportListOrderDrag(null);
+
+      if (orderedReportNodeIds) {
+        onReorderReportList(completedDrag.ownerNodeId, orderedReportNodeIds);
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [onReorderReportList, reportListOrderDrag, zoom]);
+
+  useEffect(() => {
     const handleKeyboardZoom = (event: KeyboardEvent) => {
       if (
         event.metaKey ||
@@ -331,6 +415,33 @@ export function OrgChartCanvas({
     });
   };
 
+  const startReportListOrderDrag = (
+    ownerNodeId: string,
+    reportNodeId: string,
+    pointerId: number,
+    clientY: number,
+  ) => {
+    const rowMeasurements = getReportListRowMeasurements(
+      ownerNodeId,
+      canvasRef.current,
+      zoom,
+    );
+
+    if (rowMeasurements.length < 2) {
+      return;
+    }
+
+    setReportListOrderDrag({
+      ownerNodeId,
+      reportNodeId,
+      pointerId,
+      startClientY: clientY,
+      currentClientY: clientY,
+      hasMoved: false,
+      rowMeasurements,
+    });
+  };
+
   const toggleFilterNodeType = (
     nodeType: CanvasFilterNodeType,
     isVisible: boolean,
@@ -375,6 +486,10 @@ export function OrgChartCanvas({
             } ${
               nodeOrderDrag ? "org-chart-canvas--ordering-node" : ""
             } ${
+              reportListOrderDrag
+                ? "org-chart-canvas--ordering-report-list"
+                : ""
+            } ${
               shouldShowStarterHelp ? "org-chart-canvas--starter-help" : ""
             }`}
             style={{
@@ -418,10 +533,15 @@ export function OrgChartCanvas({
                     nodeOrderDrag,
                     zoom,
                   )}
+                  reportListOrderDrag={getVisibleReportListOrderDrag(
+                    reportListOrderDrag,
+                    zoom,
+                  )}
                   isOrderDragging={nodeOrderDrag?.nodeId === layoutNode.node.id}
                   showJobTitles={showJobTitles}
                   onBeginConnectionDrag={startConnectionDrag}
                   onBeginNodeOrderDrag={startNodeOrderDrag}
+                  onBeginReportListOrderDrag={startReportListOrderDrag}
                   onChangeNode={onChangeNode}
                   onSelect={onSelectNode}
                 />
@@ -587,6 +707,93 @@ function getOrderedNodeIdsAfterHorizontalDrag(
   return orderedNodeIds.every((nodeId, index) => nodeId === currentNodeIds[index])
     ? null
     : orderedNodeIds;
+}
+
+function getVisibleReportListOrderDrag(
+  reportListOrderDrag: ReportListOrderDragState | null,
+  zoom: number,
+): { ownerNodeId: string; reportNodeId: string; offsetY: number } | null {
+  if (!reportListOrderDrag) {
+    return null;
+  }
+
+  return {
+    ownerNodeId: reportListOrderDrag.ownerNodeId,
+    reportNodeId: reportListOrderDrag.reportNodeId,
+    offsetY:
+      (reportListOrderDrag.currentClientY -
+        reportListOrderDrag.startClientY) /
+      zoom,
+  };
+}
+
+function getReportListRowMeasurements(
+  ownerNodeId: string,
+  canvasElement: HTMLElement | null,
+  zoom: number,
+): ReportListRowMeasurement[] {
+  if (!canvasElement) {
+    return [];
+  }
+
+  const canvasRect = canvasElement.getBoundingClientRect();
+
+  return Array.from(
+    canvasElement.querySelectorAll<HTMLElement>(".report-list-node-item"),
+  )
+    .filter((rowElement) => rowElement.dataset.reportListOwnerId === ownerNodeId)
+    .map((rowElement) => {
+      const rowRect = rowElement.getBoundingClientRect();
+
+      return {
+        nodeId: rowElement.dataset.reportNodeId ?? "",
+        centerY: (rowRect.top - canvasRect.top + rowRect.height / 2) / zoom,
+      };
+    })
+    .filter((measurement) => measurement.nodeId);
+}
+
+function getOrderedReportNodeIdsAfterVerticalDrag(
+  reportListOrderDrag: ReportListOrderDragState,
+  zoom: number,
+): string[] | null {
+  const draggedRow = reportListOrderDrag.rowMeasurements.find(
+    (row) => row.nodeId === reportListOrderDrag.reportNodeId,
+  );
+
+  if (!draggedRow || reportListOrderDrag.rowMeasurements.length < 2) {
+    return null;
+  }
+
+  const dragOffsetY =
+    (reportListOrderDrag.currentClientY -
+      reportListOrderDrag.startClientY) /
+    zoom;
+  const draggedCenterY = draggedRow.centerY + dragOffsetY;
+  const rowMeasurementsWithoutDragged = reportListOrderDrag.rowMeasurements.filter(
+    (row) => row.nodeId !== reportListOrderDrag.reportNodeId,
+  );
+  const insertionIndex = rowMeasurementsWithoutDragged.findIndex((row) => {
+    return draggedCenterY < row.centerY;
+  });
+  const nextRows = [...rowMeasurementsWithoutDragged];
+
+  nextRows.splice(
+    insertionIndex === -1 ? nextRows.length : insertionIndex,
+    0,
+    draggedRow,
+  );
+
+  const orderedReportNodeIds = nextRows.map((row) => row.nodeId);
+  const currentReportNodeIds = reportListOrderDrag.rowMeasurements.map(
+    (row) => row.nodeId,
+  );
+
+  return orderedReportNodeIds.every(
+    (nodeId, index) => nodeId === currentReportNodeIds[index],
+  )
+    ? null
+    : orderedReportNodeIds;
 }
 
 function getReorderSiblingLayoutNodes(

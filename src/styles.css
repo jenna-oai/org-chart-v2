@@ -585,6 +585,20 @@ select {
   border: 1px solid rgb(0 0 0 / 10%);
   border-radius: 8px;
   background: #ffffff;
+  cursor: grab;
+  transition:
+    box-shadow 120ms ease,
+    transform 120ms ease;
+  touch-action: none;
+  user-select: none;
+}
+
+.report-list-node-item--order-dragging {
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 10px 22px rgb(23 32 42 / 18%);
+  cursor: grabbing;
+  transition: none;
 }
 
 .report-list-node-item--employee {
